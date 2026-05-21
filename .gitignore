@@ -1,0 +1,19 @@
+# Ignore OS and editor files
+.DS_Store
+.idea/
+*.iml
+
+# Ignore Maven build output and runtime artifacts
+target/
+logs/
+
+# Ignore all secret directories and secret files
+**/secrets/
+**/secrets.properties
+*.env
+*.key
+*.pem
+*.jks
+*.p12
+*.crt
+*.csr

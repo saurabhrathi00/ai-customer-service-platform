@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/saurabhrathi/Documents/Projects/ai-customer-service-platform/user-business-service/src/main/java/**)",
+      "Read(//Users/saurabhrathi/Documents/Projects/ai-customer-service-platform/auth-service/src/main/java/**)"
+    ]
+  }
+}

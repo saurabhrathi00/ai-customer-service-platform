@@ -1,0 +1,23 @@
+target/
+*.class
+*.jar
+*.war
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Mac
+.DS_Store
+
+# Secrets — NEVER commit these
+secrets/secrets.properties
+
+# Logs
+logs/
+*.log
+
+# Spring Boot
+spring-shell.log
