@@ -7,6 +7,9 @@
 target/
 logs/
 
+# Claude Code session state (per-developer machine)
+.claude/
+
 # Ignore all secret directories and secret files
 **/secrets/
 **/secrets.properties
