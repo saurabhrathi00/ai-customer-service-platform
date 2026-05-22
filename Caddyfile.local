@@ -1,0 +1,33 @@
+# Local reverse proxy. Listens on plain HTTP :80 — no TLS here because ngrok
+# (or cloudflared) terminates TLS at the public edge and forwards plain HTTP
+# to this container.
+#
+# Used only by docker-compose.local.yml. Production uses ./Caddyfile with
+# Let's Encrypt.
+
+:80 {
+	encode zstd gzip
+
+	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/*
+	respond @unknown "Not Found" 404
+
+	route /auth-service/* {
+		reverse_proxy auth-service:8081
+	}
+
+	route /user-business-service/* {
+		reverse_proxy user-business-service:8082
+	}
+
+	route /knowledge-service/* {
+		reverse_proxy knowledge-service:8083
+	}
+
+	route /incoming-call-service/* {
+		reverse_proxy incoming-call-service:8085
+	}
+
+	route /call-orchestration-service/* {
+		reverse_proxy call-orchestration-service:8086
+	}
+}

@@ -1,0 +1,113 @@
+# Local-development overlay for docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# What this overlay does:
+#   1. Mounts ./<service>/configs/service.properties → /etc/service.properties (read-only)
+#      and ./<service>/secrets/secrets.properties → /etc/secrets.properties (read-only).
+#      Effect for the container is identical to a COPY at /etc/.
+#   2. Sets SPRING_CONFIG_LOCATION to load those /etc/ files alongside the
+#      classpath application.properties (which still has port, JPA, etc.).
+#   3. Sets the CONFIGS_*_BASEURL env vars so the localhost defaults inside
+#      the mounted service.properties resolve to container hostnames on the
+#      backend bridge network.
+#   4. Skips the Caddy sidecar (Let's Encrypt cannot issue a cert for
+#      localhost). Each service stays directly reachable on 127.0.0.1:<port>.
+#
+# Twilio testing note: services run in containers, not on your host's network.
+# To accept inbound Twilio calls locally, terminate the tunnel
+# (ngrok / cloudflared) at the host and export
+# CONFIGS_CALLORCHESTRATION_WSBASEURL=wss://<your-tunnel>/call-orchestration-service
+# before bringing the stack up.
+
+x-spring-config: &spring-config
+  # Explicit list = classpath app props (port / JPA / spring.config.import)
+  # + the two /etc/ files mounted from local. optional: prevents startup
+  # failure if a file is missing — useful when running a subset of services.
+  SPRING_CONFIG_LOCATION: classpath:/application.properties,optional:file:/etc/service.properties,optional:file:/etc/secrets.properties
+
+services:
+
+  # Local reverse proxy. Plain HTTP on :80 — TLS is terminated at the public
+  # edge by ngrok / cloudflared, then forwarded as HTTP to this container.
+  # The production `caddy` service stays gated behind the `production` profile
+  # in the base compose; this is a separate service so the two configs don't
+  # collide.
+  caddy-local:
+    image: caddy:2-alpine
+    container_name: caddy-local
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy
+      knowledge-service:
+        condition: service_healthy
+      incoming-call-service:
+        condition: service_healthy
+      call-orchestration-service:
+        condition: service_healthy
+
+  auth-service:
+    environment:
+      <<: *spring-config
+    volumes:
+      - ./auth-service/configs/service.properties:/etc/service.properties:ro
+      - ./auth-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  user-business-service:
+    environment:
+      <<: *spring-config
+    volumes:
+      - ./user-business-service/configs/service.properties:/etc/service.properties:ro
+      - ./user-business-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  knowledge-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+    volumes:
+      - ./knowledge-service/configs/service.properties:/etc/service.properties:ro
+      - ./knowledge-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  ai-conversation-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+    volumes:
+      - ./ai-conversation-service/configs/service.properties:/etc/service.properties:ro
+      - ./ai-conversation-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  call-orchestration-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+      CONFIGS_KNOWLEDGESERVICE_BASEURL: http://knowledge-service:8083/knowledge-service
+      CONFIGS_AICONVERSATIONSERVICE_BASEURL: http://ai-conversation-service:8087/ai-conversation-service
+      CONFIGS_AICONVERSATIONSERVICE_WSBASEURL: ws://ai-conversation-service:8087/ai-conversation-service/ws/conversation
+    volumes:
+      - ./call-orchestration-service/configs/service.properties:/etc/service.properties:ro
+      - ./call-orchestration-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  incoming-call-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+      # Twilio cannot reach localhost. For real call testing, terminate ngrok/
+      # cloudflared at the host pointing at :8086 and export
+      # CONFIGS_CALLORCHESTRATION_WSBASEURL before `docker compose up`.
+      CONFIGS_CALLORCHESTRATION_WSBASEURL: ${CONFIGS_CALLORCHESTRATION_WSBASEURL:-ws://localhost:8086/call-orchestration-service}
+    volumes:
+      - ./incoming-call-service/configs/service.properties:/etc/service.properties:ro
+      - ./incoming-call-service/secrets/secrets.properties:/etc/secrets.properties:ro
