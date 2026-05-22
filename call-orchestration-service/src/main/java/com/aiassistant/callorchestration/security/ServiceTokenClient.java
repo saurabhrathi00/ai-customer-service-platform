@@ -1,7 +1,6 @@
 package com.aiassistant.callorchestration.security;
 
 import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
-import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.exceptions.DownstreamServiceException;
 import com.aiassistant.callorchestration.models.request.ServiceTokenRequest;
 import com.aiassistant.callorchestration.models.response.ServiceTokenResponse;
@@ -15,8 +14,9 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Component
 public class ServiceTokenClient {
@@ -25,38 +25,33 @@ public class ServiceTokenClient {
     private static final Duration REFRESH_BUFFER = Duration.ofSeconds(30);
 
     private final RestClient authServiceRestClient;
-    private final ServiceConfiguration serviceConfiguration;
     private final SecretsConfiguration secretsConfiguration;
 
-    private volatile String cachedToken;
-    private volatile Instant expiresAt = Instant.EPOCH;
+    private final ConcurrentMap<String, CachedToken> cache = new ConcurrentHashMap<>();
 
     public ServiceTokenClient(@Qualifier("authServiceRestClient") RestClient authServiceRestClient,
-                              ServiceConfiguration serviceConfiguration,
                               SecretsConfiguration secretsConfiguration) {
         this.authServiceRestClient = authServiceRestClient;
-        this.serviceConfiguration = serviceConfiguration;
         this.secretsConfiguration = secretsConfiguration;
     }
 
-    public synchronized String getToken() {
-        if (cachedToken != null && Instant.now().isBefore(expiresAt.minus(REFRESH_BUFFER))) {
-            return cachedToken;
+    public String getToken(String audience, List<String> scopes) {
+        CachedToken existing = cache.get(audience);
+        if (existing != null && Instant.now().isBefore(existing.expiresAt().minus(REFRESH_BUFFER))) {
+            return existing.token();
         }
-        refresh();
-        return cachedToken;
+        return refresh(audience, scopes);
     }
 
-    private void refresh() {
-        ServiceConfiguration.AuthService cfg = serviceConfiguration.getAuthService();
+    private synchronized String refresh(String audience, List<String> scopes) {
+        CachedToken existing = cache.get(audience);
+        if (existing != null && Instant.now().isBefore(existing.expiresAt().minus(REFRESH_BUFFER))) {
+            return existing.token();
+        }
+
         SecretsConfiguration.AuthService creds = secretsConfiguration.getAuthService();
-
-        List<String> scopes = cfg.getScopes() == null || cfg.getScopes().isBlank()
-                ? List.of()
-                : Arrays.stream(cfg.getScopes().split("[,\\s]+")).filter(s -> !s.isBlank()).toList();
-
         ServiceTokenRequest body = new ServiceTokenRequest(
-                creds.getClientId(), creds.getClientSecret(), cfg.getAudience(), scopes);
+                creds.getClientId(), creds.getClientSecret(), audience, scopes);
 
         try {
             ServiceTokenResponse response = authServiceRestClient.post()
@@ -70,11 +65,16 @@ public class ServiceTokenClient {
                 throw new DownstreamServiceException("auth-service returned empty service token");
             }
 
-            this.cachedToken = response.getToken();
-            this.expiresAt = Instant.now().plusSeconds(response.getExpiresIn());
-            log.info("Service token refreshed, expires in {}s", response.getExpiresIn());
+            CachedToken fresh = new CachedToken(
+                    response.getToken(),
+                    Instant.now().plusSeconds(response.getExpiresIn()));
+            cache.put(audience, fresh);
+            log.info("Service token refreshed for audience={}, expires in {}s", audience, response.getExpiresIn());
+            return fresh.token();
         } catch (RestClientException ex) {
             throw new DownstreamServiceException("Failed to fetch service token from auth-service", ex);
         }
     }
+
+    private record CachedToken(String token, Instant expiresAt) {}
 }

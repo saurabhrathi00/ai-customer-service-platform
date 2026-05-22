@@ -19,4 +19,15 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "ttsExecutor")
+    public Executor ttsExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(32);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("tts-");
+        executor.initialize();
+        return executor;
+    }
 }

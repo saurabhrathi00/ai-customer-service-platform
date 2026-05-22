@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -39,6 +40,18 @@ public class ConversationSession {
 
     @Setter private volatile Instant lastActivityAt;
 
+    /** Consecutive UNCLEAR_MESSAGE turns — reset by a normal MESSAGE.
+     *  Used to escalate to CALLBACK_NEEDED after N unclear turns in a row. */
+    private final AtomicInteger unclearStreak = new AtomicInteger();
+
+    /** Consecutive SILENCE_PROMPT turns — reset by a normal MESSAGE.
+     *  Used to escalate to HANGUP after N prompts go unanswered. */
+    private final AtomicInteger silenceStreak = new AtomicInteger();
+
+    /** Customer language, supplied via INIT metadata. Used to pick the right
+     *  canned text for UNCLEAR / SILENCE / greeting paths without an LLM hop. */
+    @Setter private volatile String language;
+
     public ConversationSession(String conversationId, String businessId,
                                LlmProvider provider, String knowledge) {
         this.conversationId = conversationId;
@@ -61,6 +74,24 @@ public class ConversationSession {
     public void appendAssistant(String text) {
         messages.add(LlmMessage.builder().role(LlmMessage.Role.ASSISTANT).content(text).build());
         touch();
+    }
+
+    public int incrementUnclearStreak() {
+        touch();
+        return unclearStreak.incrementAndGet();
+    }
+
+    public void resetUnclearStreak() {
+        unclearStreak.set(0);
+    }
+
+    public int incrementSilenceStreak() {
+        touch();
+        return silenceStreak.incrementAndGet();
+    }
+
+    public void resetSilenceStreak() {
+        silenceStreak.set(0);
     }
 
     public void addUsage(TokenUsage delta) {

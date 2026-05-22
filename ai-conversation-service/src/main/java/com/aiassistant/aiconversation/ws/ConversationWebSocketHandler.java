@@ -4,8 +4,9 @@ import com.aiassistant.aiconversation.configuration.ServiceConfiguration;
 import com.aiassistant.aiconversation.exceptions.LlmException;
 import com.aiassistant.aiconversation.llm.LlmProvider;
 import com.aiassistant.aiconversation.llm.LlmProviderRegistry;
-import com.aiassistant.aiconversation.llm.LlmReply;
+import com.aiassistant.aiconversation.llm.LlmDelta;
 import com.aiassistant.aiconversation.llm.LlmRequest;
+import com.aiassistant.aiconversation.llm.TokenUsage;
 import com.aiassistant.aiconversation.session.ConversationSession;
 import com.aiassistant.aiconversation.session.ConversationSession.PendingMessage;
 import com.aiassistant.aiconversation.session.SessionRegistry;
@@ -60,7 +61,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession ws) {
-        log.info("WS connected id={} remote={}", ws.getId(), ws.getRemoteAddress());
+        // intentionally quiet
     }
 
     @Override
@@ -79,6 +80,8 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         switch (frame.getType()) {
             case INIT -> handleInit(ws, frame);
             case MESSAGE -> handleMessage(ws, frame);
+            case UNCLEAR_MESSAGE -> handleUnclearMessage(ws, frame);
+            case SILENCE_PROMPT -> handleSilencePrompt(ws, frame);
             case END -> ws.close(CloseStatus.NORMAL);
             default -> sendError(ws, frame.getConversationId(),
                     "BAD_FRAME", "Unsupported inbound type: " + frame.getType());
@@ -103,7 +106,6 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         if (existing != null) {
             // INIT after a KNOWLEDGE_REQUEST — knowledge is being supplied late.
             existing.setKnowledge(frame.getKnowledge());
-            log.info("Knowledge supplied late for conversationId={}", existing.getConversationId());
             replayPending(ws, existing);
             return;
         }
@@ -128,8 +130,121 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         }
         ws.getAttributes().put(ATTR_CONVERSATION_ID, session.getConversationId());
 
-        log.info("Session created conversationId={} businessId={} provider={}",
-                session.getConversationId(), session.getBusinessId(), provider.id());
+        if (frame.getMetadata() != null) {
+            Object lang = frame.getMetadata().get("language");
+            if (lang instanceof String s && !s.isBlank()) session.setLanguage(s);
+        }
+
+        if (frame.getGreeting() != null && !frame.getGreeting().isBlank()) {
+            session.appendAssistant(frame.getGreeting().trim());
+        }
+    }
+
+    // ─── UNCLEAR_MESSAGE ─────────────────────────────────────────────────
+
+    private static final int MAX_CONSECUTIVE_UNCLEAR = 3;
+    /** Tri-lingual canned ask — same phrasing every time, no LLM round-trip. */
+    private static final String UNCLEAR_REPLY =
+            "Sorry, I couldn't catch that — kya aap dobara bol sakte hain?";
+    private static final String UNCLEAR_GIVEUP =
+            "Lagta hai line saaf nahi hai. Hum aapko thodi der mein call back kar denge.";
+
+    private void handleUnclearMessage(WebSocketSession ws, InboundFrame frame) throws IOException {
+        String conversationId = resolveConversationId(ws, frame);
+        if (conversationId == null) {
+            sendError(ws, null, "BAD_FRAME", "UNCLEAR_MESSAGE missing conversationId");
+            return;
+        }
+        ConversationSession session = sessionRegistry.get(conversationId);
+        int streak = session == null ? 1 : session.incrementUnclearStreak();
+
+        if (streak >= MAX_CONSECUTIVE_UNCLEAR) {
+            if (session != null) session.resetUnclearStreak();
+            log.info("[unclear] conversationId={} streak={} action=HANGUP reply=\"{}\"",
+                    conversationId, streak, UNCLEAR_GIVEUP);
+            send(ws, OutboundFrames.Hangup.builder()
+                    .conversationId(conversationId)
+                    .replyToMessageId(frame.getMessageId())
+                    .text(UNCLEAR_GIVEUP)
+                    .reason("UNCLEAR")
+                    .build());
+            return;
+        }
+        log.info("[unclear] conversationId={} streak={} action=ASK_REPEAT reply=\"{}\"",
+                conversationId, streak, UNCLEAR_REPLY);
+        send(ws, OutboundFrames.Response.builder()
+                .conversationId(conversationId)
+                .replyToMessageId(frame.getMessageId())
+                .text(UNCLEAR_REPLY)
+                .build());
+    }
+
+    // ─── SILENCE_PROMPT ──────────────────────────────────────────────────
+
+    private static final int MAX_SILENCE_PROMPTS = 3;
+
+    private void handleSilencePrompt(WebSocketSession ws, InboundFrame frame) throws IOException {
+        String conversationId = resolveConversationId(ws, frame);
+        if (conversationId == null) {
+            sendError(ws, null, "BAD_FRAME", "SILENCE_PROMPT missing conversationId");
+            return;
+        }
+        ConversationSession session = sessionRegistry.get(conversationId);
+        int count = session == null ? 1 : session.incrementSilenceStreak();
+        String lang = session == null ? null : session.getLanguage();
+
+        if (count >= MAX_SILENCE_PROMPTS) {
+            if (session != null) session.resetSilenceStreak();
+            String farewell = silenceFarewell(lang);
+            log.info("[silence] conversationId={} count={} action=HANGUP reply=\"{}\"",
+                    conversationId, count, farewell);
+            send(ws, OutboundFrames.Hangup.builder()
+                    .conversationId(conversationId)
+                    .replyToMessageId(frame.getMessageId())
+                    .text(farewell)
+                    .reason("SILENCE")
+                    .build());
+            return;
+        }
+        String prompt = silencePrompt(lang, count);
+        log.info("[silence] conversationId={} count={} action=PROMPT reply=\"{}\"",
+                conversationId, count, prompt);
+        send(ws, OutboundFrames.Response.builder()
+                .conversationId(conversationId)
+                .replyToMessageId(frame.getMessageId())
+                .text(prompt)
+                .build());
+    }
+
+    private static String silencePrompt(String language, int count) {
+        boolean english = language != null && language.toLowerCase().startsWith("en");
+        boolean hindi   = language != null && language.toLowerCase().startsWith("hi");
+        if (english) {
+            return count == 1
+                    ? "Hello, are you still there? How can I help you?"
+                    : "Hello? Can you hear me?";
+        }
+        if (hindi) {
+            return count == 1
+                    ? "Hello, kya aap line par hain? Main aapki kaise madad kar sakti hoon?"
+                    : "Hello, aapki awaaz aa rahi hai?";
+        }
+        // Unknown — bilingual.
+        return count == 1
+                ? "Hello, kya aap line par hain? Are you still there?"
+                : "Hello, can you hear me? Aapki awaaz aa rahi hai?";
+    }
+
+    private static String silenceFarewell(String language) {
+        boolean english = language != null && language.toLowerCase().startsWith("en");
+        boolean hindi   = language != null && language.toLowerCase().startsWith("hi");
+        if (english) {
+            return "I'm not receiving any response from your side, so I'll disconnect the call. Thank you for calling.";
+        }
+        if (hindi) {
+            return "Aapki taraf se koi awaaz nahi aa rahi, isliye main call disconnect kar rahi hoon. Dhanyavaad.";
+        }
+        return "Aapki taraf se koi awaaz nahi aa rahi, isliye main call disconnect kar rahi hoon. Dhanyavaad.";
     }
 
     // ─── MESSAGE ─────────────────────────────────────────────────────────
@@ -201,6 +316,8 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
     private void processTurn(WebSocketSession ws, ConversationSession session,
                              String replyToMessageId, String userText) throws IOException {
         session.appendUser(userText);
+        session.resetUnclearStreak();
+        session.resetSilenceStreak();
 
         ServiceConfiguration.Llm cfg = serviceConfiguration.getLlm();
         LlmRequest req = LlmRequest.builder()
@@ -211,40 +328,182 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .cacheSystemPrompt(cfg.isPromptCacheEnabled())
                 .build();
 
-        LlmReply reply;
+        // Streaming LLM call. We buffer the first ~20 chars of text so we can
+        // detect the {@code CALLBACK_NEEDED} sentinel before forwarding any
+        // delta to call-orch — the sentinel must never leak to TTS. Once we
+        // know it isn't a callback, all subsequent text is forwarded as
+        // RESPONSE_DELTA frames as soon as it arrives.
+        TurnState state = new TurnState(replyToMessageId);
+
         try {
-            reply = session.getProvider().complete(req);
+            reactor.core.publisher.Flux<LlmDelta> stream = reactor.core.publisher.Flux
+                    .from(session.getProvider().streamReply(req));
+
+            // Blocking subscribe — this handler thread waits on the stream and
+            // pushes WS frames inline. Per-turn ordering is preserved.
+            stream.toIterable().forEach(delta -> emitDelta(ws, session, state, delta));
+
         } catch (LlmException e) {
-            log.warn("LLM call failed conversationId={} code={} msg={}",
+            log.warn("LLM stream failed conversationId={} code={} msg={}",
                     session.getConversationId(), e.getCode(), e.getMessage());
-            sendError(ws, session.getConversationId(), e.getCode(), e.getMessage());
+            sendErrorQuiet(ws, session.getConversationId(), e.getCode(), e.getMessage());
             return;
         } catch (Exception e) {
-            log.warn("LLM call failed conversationId={}: {}", session.getConversationId(), e.getMessage());
-            sendError(ws, session.getConversationId(), "LLM_TRANSIENT", e.getMessage());
+            log.warn("LLM stream failed conversationId={}: {}", session.getConversationId(), e.getMessage());
+            sendErrorQuiet(ws, session.getConversationId(), "LLM_TRANSIENT", e.getMessage());
             return;
         }
 
-        String text = reply.getText() == null ? "" : reply.getText().trim();
-        session.addUsage(reply.getUsage());
+        finishTurn(ws, session, state);
+    }
 
-        if (SystemPromptBuilder.CALLBACK_NEEDED.equals(text)) {
-            // Do not append the sentinel to history.
+    /** Per-turn streaming state: accumulator, callback detection, last usage. */
+    private static final class TurnState {
+        final String replyToMessageId;
+        final StringBuilder acc = new StringBuilder();
+        /** Sentinel state: UNKNOWN (still buffering), NORMAL, CALLBACK. */
+        Mode mode = Mode.UNKNOWN;
+        /** Once we know it's a normal reply, this is how much of {@code acc} we have already forwarded. */
+        int forwardedUpto = 0;
+        TokenUsage lastUsage;
+        String finishReason;
+        boolean doneEmitted = false;
+
+        TurnState(String replyToMessageId) { this.replyToMessageId = replyToMessageId; }
+    }
+
+    private enum Mode { UNKNOWN, NORMAL, CALLBACK, HANGUP }
+
+    /** Sentinels the LLM may emit at the very start of a reply. The longest
+     *  one bounds how many chars we must buffer before classifying. */
+    private static final String[] SENTINELS = {
+            SystemPromptBuilder.CALLBACK_NEEDED + "|",
+            SystemPromptBuilder.HANGUP + "|"
+    };
+    private static final int MAX_SENTINEL_LEN = Math.max(
+            SystemPromptBuilder.CALLBACK_NEEDED.length() + 1,
+            SystemPromptBuilder.HANGUP.length() + 1);
+
+    private void emitDelta(WebSocketSession ws, ConversationSession session,
+                           TurnState state, LlmDelta delta) {
+        if (delta.getUsage() != null) state.lastUsage = delta.getUsage();
+        if (delta.getFinishReason() != null) state.finishReason = delta.getFinishReason();
+
+        String chunk = delta.getText();
+        if (chunk != null && !chunk.isEmpty()) {
+            state.acc.append(chunk);
+            try {
+                forwardOrBuffer(ws, session, state);
+            } catch (IOException io) {
+                throw new RuntimeException(io);
+            }
+        }
+    }
+
+    private void forwardOrBuffer(WebSocketSession ws, ConversationSession session,
+                                 TurnState state) throws IOException {
+        if (state.mode == Mode.UNKNOWN) {
+            String head = state.acc.toString().stripLeading();
+            // Try to classify. If head matches a sentinel prefix exactly,
+            // route to that mode. If head can no longer extend to any
+            // sentinel, route to NORMAL and flush. Else keep buffering.
+            if (head.startsWith(SystemPromptBuilder.CALLBACK_NEEDED + "|")) {
+                state.mode = Mode.CALLBACK;
+                return;
+            }
+            if (head.startsWith(SystemPromptBuilder.HANGUP + "|")) {
+                state.mode = Mode.HANGUP;
+                return;
+            }
+            boolean stillPossible = false;
+            for (String s : SENTINELS) {
+                if (s.startsWith(head)) { stillPossible = true; break; }
+            }
+            if (stillPossible && head.length() < MAX_SENTINEL_LEN) return;
+
+            // Not a sentinel — emit as normal text.
+            state.mode = Mode.NORMAL;
+            flushNormalDeltas(ws, session, state);
+            return;
+        }
+        if (state.mode == Mode.NORMAL) {
+            flushNormalDeltas(ws, session, state);
+        }
+        // CALLBACK / HANGUP: buffer silently until done.
+    }
+
+    private void flushNormalDeltas(WebSocketSession ws, ConversationSession session,
+                                   TurnState state) throws IOException {
+        if (state.forwardedUpto < state.acc.length()) {
+            String chunk = state.acc.substring(state.forwardedUpto);
+            state.forwardedUpto = state.acc.length();
+            send(ws, OutboundFrames.ResponseDelta.builder()
+                    .conversationId(session.getConversationId())
+                    .replyToMessageId(state.replyToMessageId)
+                    .text(chunk)
+                    .build());
+        }
+    }
+
+    private void finishTurn(WebSocketSession ws, ConversationSession session,
+                            TurnState state) throws IOException {
+        if (state.doneEmitted) return;
+        state.doneEmitted = true;
+        if (state.lastUsage != null) session.addUsage(state.lastUsage);
+
+        String full = state.acc.toString().trim();
+
+        // Sentinel branches — extract spoken text after the '|' separator and
+        // emit the appropriate signalling frame instead of RESPONSE_DONE.
+        if (state.mode == Mode.CALLBACK
+                || (state.mode == Mode.UNKNOWN && full.startsWith(SystemPromptBuilder.CALLBACK_NEEDED + "|"))) {
+            String spoken = extractSpoken(full);
+            if (!spoken.isEmpty()) session.appendAssistant(spoken);
             send(ws, OutboundFrames.CallbackNeeded.builder()
                     .conversationId(session.getConversationId())
-                    .replyToMessageId(replyToMessageId)
+                    .replyToMessageId(state.replyToMessageId)
+                    .text(spoken.isEmpty() ? null : spoken)
+                    .usage(state.lastUsage)
                     .build());
-            log.info("Callback needed conversationId={}", session.getConversationId());
+            return;
+        }
+        if (state.mode == Mode.HANGUP
+                || (state.mode == Mode.UNKNOWN && full.startsWith(SystemPromptBuilder.HANGUP + "|"))) {
+            String spoken = extractSpoken(full);
+            if (!spoken.isEmpty()) session.appendAssistant(spoken);
+            send(ws, OutboundFrames.Hangup.builder()
+                    .conversationId(session.getConversationId())
+                    .replyToMessageId(state.replyToMessageId)
+                    .text(spoken.isEmpty() ? null : spoken)
+                    .reason("GOODBYE")
+                    .build());
             return;
         }
 
-        session.appendAssistant(text);
-        send(ws, OutboundFrames.Response.builder()
+        // Normal reply — make sure anything still buffered is forwarded.
+        if (state.mode == Mode.UNKNOWN) state.mode = Mode.NORMAL;
+        flushNormalDeltas(ws, session, state);
+        session.appendAssistant(full);
+        send(ws, OutboundFrames.ResponseDone.builder()
                 .conversationId(session.getConversationId())
-                .replyToMessageId(replyToMessageId)
-                .text(text)
-                .usage(reply.getUsage())
+                .replyToMessageId(state.replyToMessageId)
+                .finishReason(state.finishReason)
+                .usage(state.lastUsage)
                 .build());
+    }
+
+    private static String extractSpoken(String full) {
+        int pipe = full.indexOf('|');
+        if (pipe >= 0 && pipe + 1 < full.length()) {
+            return full.substring(pipe + 1).trim();
+        }
+        return "";
+    }
+
+    private void sendErrorQuiet(WebSocketSession ws, String conversationId,
+                                String code, String message) {
+        try { sendError(ws, conversationId, code, message); }
+        catch (IOException ignored) {}
     }
 
     // ─── Lifecycle / utilities ───────────────────────────────────────────
@@ -254,7 +513,6 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         String conversationId = (String) ws.getAttributes().get(ATTR_CONVERSATION_ID);
         if (conversationId != null) {
             sessionRegistry.remove(conversationId);
-            log.info("Session closed conversationId={} status={}", conversationId, status);
         }
     }
 

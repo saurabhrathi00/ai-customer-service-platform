@@ -1,0 +1,929 @@
+AI Customer Service Platform
+Microservices Architecture Design Document
+Phase 1 — MVP
+Field
+Detail
+Version
+2.0.0
+Phase
+Phase 1 — MVP
+Status
+Updated
+Date
+18 May 2026
+Architecture Style
+Microservices (MVC internally per service)
+Primary Language
+Java 17 (Spring Boot 3.2)
+Database
+Supabase (PostgreSQL)
+Deployment
+Railway.app
+File Storage
+AWS S3
+
+
+1. Architecture Overview
+
+This document defines the complete microservices architecture for the AI Customer Service Platform. The system is decomposed into 11 independent services, each owning its own data, responsibilities, and deployment lifecycle. Services communicate via REST APIs synchronously and via an event/message queue asynchronously where decoupling is critical.
+
+1.1 Architecture Principles
+	•	Single Responsibility — each service does one thing and does it well.
+	•	Database per Service — no shared databases between services.
+	•	API Gateway as single entry point — all external traffic passes through the gateway.
+	•	Strict Data Isolation — Business A's data is never accessible to Business B at any layer.
+	•	Stateless Services — services do not hold session state; JWT tokens carry identity.
+	•	Async where possible — long-running tasks (summary generation, notifications) are decoupled via message queue.
+
+1.2 High-Level System Groups
+
+Group
+Services Included
+Purpose
+Identity & Access
+auth-service, user-business-service
+Registration, login, JWT, business profiles
+Business Management
+knowledge-service, dashboard-service
+Knowledge base management, dashboard data
+Call Orchestration
+incoming-call-service, call-orchestration-service
+Twilio integration, live call handling
+AI Layer
+ai-conversation-service
+Claude API wrapper, conversation engine
+Post-Call Processing
+feedback-service, conversation-summary-service
+Feedback collection, AI summary generation
+Notifications
+notification-service
+Business alerts for callback requests
+Admin
+admin-service
+Super admin platform metrics dashboard
+Infrastructure
+api-gateway
+Routing, auth validation, rate limiting
+
+
+2. Service Catalogue
+
+2.1 api-gateway
+Property
+Detail
+Port
+8080 (external facing)
+Technology
+Spring Cloud Gateway
+Responsibility
+Single entry point, routing, JWT validation, rate limiting
+Owns Database?
+No
+Communicates With
+All downstream services
+
+	•	All incoming HTTP requests from browsers, mobile apps, or Twilio webhooks pass through this gateway.
+	•	Validates JWT token on every request (except /auth/login and /auth/register routes).
+	•	Routes to correct downstream service based on URL path.
+	•	Handles rate limiting per business to prevent abuse.
+
+Routing Table
+Path Prefix
+Routes To
+Auth Required?
+/auth/**
+auth-service
+No
+/business/**
+user-business-service
+Yes
+/knowledge/**
+knowledge-service
+Yes
+/dashboard/**
+dashboard-service
+Yes
+/admin/**
+admin-service
+Yes (Admin role)
+/twilio/incoming/**
+incoming-call-service
+No (Twilio signs requests)
+/twilio/feedback/**
+feedback-service
+No (Twilio signs requests)
+
+2.2 auth-service
+Property
+Detail
+Port
+8081
+Technology
+Spring Boot + Spring Security + JWT
+Responsibility
+Login, JWT token generation and validation
+Owns Database?
+No — reads from user-business-service via REST
+Communicates With
+user-business-service (to validate credentials)
+
+Endpoints
+Method
+Endpoint
+Description
+POST
+/auth/register
+Register new business account
+POST
+/auth/login
+Login and receive JWT token
+POST
+/auth/refresh
+Refresh expired JWT token
+POST
+/auth/logout
+Invalidate token
+GET
+/auth/validate
+Validate a JWT (called by gateway)
+
+JWT Token Structure
+{   "sub": "business-uuid",   "businessId": "uuid",   "role": "BUSINESS | ADMIN",   "iat": 1700000000,   "exp": 1700086400 }
+
+2.3 user-business-service
+Property
+Detail
+Port
+8082
+Technology
+Spring Boot + JPA
+Responsibility
+Business registration, profile management, phone number management
+Owns Database?
+Yes — businesses DB
+Communicates With
+auth-service (credential validation), notification-service
+
+Owns These Tables
+Table
+Description
+businesses
+Core business entity (id, name, email, passwordHash, category, etc.)
+business_phone_numbers
+Twilio numbers assigned per business (businessId, twilioNumber, label)
+rating_config
+Interest rating scoring rules per business
+
+Key Endpoints
+Method
+Endpoint
+Description
+POST
+/business/register
+Create new business record
+GET
+/business/{id}/profile
+Get business profile
+PUT
+/business/{id}/profile
+Update business profile
+GET
+/business/{id}/phone-numbers
+Get all Twilio numbers for business
+POST
+/business/{id}/phone-numbers
+Add a new Twilio number
+GET
+/business/lookup?twilioNumber=+1xxx
+Find business by Twilio number (called by incoming-call-service)
+GET
+/business/{id}/rating-config
+Get interest rating config
+PUT
+/business/{id}/rating-config
+Update interest rating config
+
+2.4 knowledge-service
+Property
+Detail
+Port
+8083
+Technology
+Spring Boot + AWS S3 SDK + Apache PDFBox + Apache POI
+Responsibility
+Upload, store, extract, and serve business knowledge files
+Owns Database?
+Yes — knowledge_base table
+Communicates With
+AWS S3 (file storage), ai-conversation-service (serves extracted text)
+
+File Processing Flow
+	•	Business uploads file via multipart form POST.
+	•	Service validates file type (PDF, TXT, JPG, PNG) and size (max 5MB).
+	•	File is uploaded to S3 under path: s3://bucket/{businessId}/{uuid}/{filename}.
+	•	Text is extracted from the file:
+	•	PDF → Apache PDFBox extracts text.
+	•	TXT → read directly.
+	•	Images → stored as-is (OCR in future phase).
+	•	Extracted text is saved to knowledge_base table alongside the S3 URL.
+	•	AI service fetches all extracted text for a business when a call starts.
+
+Owns These Tables
+Table
+Description
+knowledge_base
+id, businessId, fileName, fileType, s3Url, extractedText, uploadedAt
+
+Key Endpoints
+Method
+Endpoint
+Description
+POST
+/knowledge/{businessId}/upload
+Upload a new knowledge file
+GET
+/knowledge/{businessId}/files
+List all files for a business
+DELETE
+/knowledge/{businessId}/files/{fileId}
+Delete a specific file
+GET
+/knowledge/{businessId}/content
+Get all extracted text (called by AI service)
+
+2.5 dashboard-service
+Property
+Detail
+Port
+8084
+Technology
+Spring Boot (read-only service)
+Responsibility
+Serve business dashboard data — recent calls, callback list, ratings
+Owns Database?
+No — reads from call-orchestration-service via REST
+Communicates With
+call-orchestration-service (call data)
+
+Key Endpoints
+Method
+Endpoint
+Description
+GET
+/dashboard/{businessId}/recent-calls
+Calls in last 24 hrs with interest ratings
+GET
+/dashboard/{businessId}/callback-list
+Callback requests sorted by time ASC
+GET
+/dashboard/{businessId}/summary
+High-level stats (total calls today, avg rating)
+
+2.6 incoming-call-service
+Property
+Detail
+Port
+8085
+Technology
+Spring Boot
+Responsibility
+Receive Twilio webhook, identify business, initiate call-orchestration
+Owns Database?
+No
+Communicates With
+user-business-service (lookup business by number), call-orchestration-service
+
+How Twilio Calls This Service
+	•	When a customer calls a Twilio number, Twilio sends an HTTP POST to this service.
+	•	The request contains: caller phone, called Twilio number, call SID.
+	•	This service validates the Twilio request signature for security.
+	•	Looks up which business owns the called Twilio number.
+	•	Returns TwiML instructing Twilio to open a Media Stream (WebSocket).
+
+TwiML Response Example
+<?xml version="1.0" encoding="UTF-8"?> <Response>   <Connect>     <Stream url="wss://yourdomain.com/ws/call/{callSid}">       <Parameter name="businessId" value="{businessId}"/>       <Parameter name="customerPhone" value="{callerNumber}"/>     </Stream>   </Connect> </Response>
+
+2.7 call-orchestration-service
+Property
+Detail
+Port
+8086 (HTTP) + WebSocket
+Technology
+Spring Boot + WebSocket (javax.websocket)
+Responsibility
+Live call management, transcript building, metadata storage, interest score calculation
+Owns Database?
+Yes — call_logs table (single owner)
+Communicates With
+ai-conversation-service, knowledge-service, conversation-summary-service, notification-service
+
+This is the most critical service. Here is what it does:
+	•	Accepts WebSocket connection from Twilio Media Stream when a call starts.
+	•	Receives audio chunks from customer in real time.
+	•	Sends audio to Speech-to-Text (Twilio built-in or Deepgram) to get transcript text.
+	•	Sends transcript text to ai-conversation-service with business knowledge context.
+	•	Receives AI text response, converts to speech (TTS), sends audio back to Twilio.
+	•	Maintains full conversation transcript in memory during the call.
+	•	On call end (Twilio status callback):
+	•	Saves call metadata to call_logs (start time, end time, duration, customer phone, businessId).
+	•	Fires transcript to conversation-summary-service (async).
+	•	If callback was requested, notifies notification-service (async).
+	•	Calculates interest score using business rating config.
+
+Owns These Tables
+Table
+Description
+call_logs
+id, businessId, customerPhone, customerName, queryType, callSummary, callDuration, feedbackScore, interestRating, callbackRequested, callTimestamp
+
+Key Endpoints
+Type
+Endpoint
+Description
+WebSocket
+/ws/call/{callSid}
+Twilio Media Stream connects here
+POST
+/calls/status-callback
+Twilio calls this when call ends
+GET
+/calls/{businessId}/recent
+Recent calls data (used by dashboard-service)
+GET
+/calls/{businessId}/callbacks
+Pending callback list
+PUT
+/calls/{callId}/feedback
+Called by feedback-service to update feedback
+PUT
+/calls/{callId}/summary
+Called by conversation-summary-service to update summary
+
+2.8 ai-conversation-service
+Property
+Detail
+Port
+8087
+Technology
+Spring Boot + Anthropic Claude API (via HTTP)
+Responsibility
+Stateless AI wrapper — takes business knowledge + customer question, returns AI response
+Owns Database?
+No
+Communicates With
+Claude API (external), knowledge-service (to fetch business knowledge on call start)
+
+How It Works
+	•	On each call start, fetches all extracted knowledge text for the business from knowledge-service.
+	•	Builds a system prompt that confines AI to only that business's knowledge:
+"You are an AI assistant for {businessName}.  You must ONLY answer questions using the following business information.  If the answer is not in the knowledge base, say:  'Our team will get back to you within 24 hours.'    Business Knowledge:  {extractedKnowledgeText}"
+	•	Maintains conversation history in memory for the duration of the call.
+	•	Each customer message is appended and sent to Claude API for the next response.
+	•	Fully stateless between calls — no data persisted.
+
+Key Endpoints
+Method
+Endpoint
+Description
+POST
+/ai/respond
+Takes {businessId, conversationHistory, customerMessage} → returns AI text response
+POST
+/ai/summarise
+Takes {businessId, fullTranscript} → returns AI-generated call summary
+
+2.9 feedback-service
+Property
+Detail
+Port
+8088
+Technology
+Spring Boot
+Responsibility
+Collect post-call keypress feedback from customer via Twilio
+Owns Database?
+No — updates call_logs via call-orchestration-service REST API
+Communicates With
+Twilio (receives keypress webhook), call-orchestration-service (updates feedback)
+
+How Feedback Collection Works
+	•	At end of AI conversation, call-orchestration-service sends TwiML to Twilio:
+<Response>   <Gather numDigits="1" action="/twilio/feedback/collect?callSid={callSid}" method="POST">     <Say>Were your questions answered?          Press 1 for Yes. Press 2 for No.</Say>   </Gather> </Response>
+	•	Customer presses 1 or 2.
+	•	Twilio sends keypress to feedback-service /collect endpoint.
+	•	Feedback-service calls call-orchestration-service PUT /calls/{callId}/feedback to update record.
+
+2.10 conversation-summary-service
+Property
+Detail
+Port
+8089
+Technology
+Spring Boot
+Responsibility
+Generate AI summary of call transcript after call ends
+Owns Database?
+No — updates call_logs via call-orchestration-service REST API
+Communicates With
+ai-conversation-service (generate summary), call-orchestration-service (update summary)
+
+	•	Triggered asynchronously after every call ends (via message queue or async REST call).
+	•	Receives full conversation transcript.
+	•	Calls ai-conversation-service POST /ai/summarise to generate a short summary.
+	•	Calls call-orchestration-service PUT /calls/{callId}/summary to save the summary.
+
+2.11 notification-service
+Property
+Detail
+Port
+8090
+Technology
+Spring Boot + Email (JavaMail / SendGrid)
+Responsibility
+Notify business when a customer requests a callback
+Owns Database?
+No
+Communicates With
+Email provider (SendGrid / SMTP)
+
+	•	Triggered asynchronously when call-orchestration-service detects a callback request.
+	•	Sends email to business with customer name, phone, and query summary.
+	•	In Phase 2: can be extended to also send SMS via Twilio Messaging.
+
+2.12 admin-service
+Property
+Detail
+Port
+8091
+Technology
+Spring Boot
+Responsibility
+Super admin dashboard — platform-wide metrics
+Owns Database?
+No — aggregates data from other services
+Communicates With
+user-business-service, call-orchestration-service
+
+
+3. Service Communication Patterns
+
+3.1 Synchronous (REST)
+Used when the caller needs an immediate response before continuing.
+
+Caller
+Called Service
+Why Synchronous
+incoming-call-service
+user-business-service
+Must know businessId before returning TwiML
+call-orchestration-service
+ai-conversation-service
+Must get AI response to send audio back to customer
+call-orchestration-service
+knowledge-service
+Must load knowledge before call starts
+dashboard-service
+call-orchestration-service
+Business dashboard needs fresh call data
+feedback-service
+call-orchestration-service
+Must update feedback immediately
+api-gateway
+auth-service
+Must validate JWT before forwarding request
+
+3.2 Asynchronous (Fire and Forget)
+Used for post-call processing tasks that do not need to block the call flow.
+
+Trigger
+Async Task
+Why Async
+Call ends
+conversation-summary-service generates summary
+Summary generation takes 2-5 seconds — no reason to block
+Callback requested
+notification-service sends email to business
+Notification does not affect the call
+Async communication can be implemented via Spring @Async or a message queue (RabbitMQ / Kafka) in Phase 2.
+
+
+4. Complete Call Flow (Step by Step)
+
+Step
+Service
+What Happens
+1
+Twilio
+Customer dials Twilio number. Twilio sends HTTP POST webhook.
+2
+api-gateway
+Routes /twilio/incoming/** to incoming-call-service (no JWT required for Twilio).
+3
+incoming-call-service
+Validates Twilio signature. Calls user-business-service to look up businessId by Twilio number.
+4
+user-business-service
+Returns businessId and business details.
+5
+incoming-call-service
+Returns TwiML to Twilio: 'Open WebSocket stream to call-orchestration-service'.
+6
+Twilio
+Opens WebSocket connection to call-orchestration-service, streams audio.
+7
+call-orchestration-service
+Accepts WebSocket. Loads business knowledge from knowledge-service.
+8
+call-orchestration-service
+Receives customer audio chunk → sends to Speech-to-Text → gets text.
+9
+ai-conversation-service
+Receives {businessId, conversationHistory, customerMessage}. Calls Claude API with isolated business prompt. Returns AI text.
+10
+call-orchestration-service
+Converts AI text to speech (TTS). Sends audio back to Twilio → Customer hears AI response.
+11
+call-orchestration-service
+Steps 8-10 repeat for every customer message throughout the call.
+12
+call-orchestration-service
+Detects query cannot be answered OR customer asks for human. Sets callbackRequested = true. AI says: 'Our team will reach you within 24 hours.'
+13
+call-orchestration-service
+AI conversation ends. Sends TwiML to Twilio for feedback collection.
+14
+Twilio
+Plays feedback prompt to customer. Collects keypress. Sends to feedback-service.
+15
+feedback-service
+Receives keypress (1 or 2). Calls call-orchestration-service to update feedback.
+16
+Twilio
+Sends status callback (call ended) to call-orchestration-service.
+17
+call-orchestration-service
+Saves call record (metadata + feedback + duration + interestRating) to call_logs.
+18
+conversation-summary-service
+Triggered async. Receives transcript. Calls ai-conversation-service for summary. Updates call_logs via call-orchestration-service.
+19
+notification-service
+Triggered async (if callbackRequested = true). Sends email to business.
+
+
+5. Database Strategy
+
+Each service that owns data has its own isolated database schema. Services do NOT share database connections.
+
+Service
+Database / Schema
+Tables Owned
+user-business-service
+db_business
+businesses, business_phone_numbers, rating_config
+knowledge-service
+db_knowledge
+knowledge_base
+call-orchestration-service
+db_calls
+call_logs
+All other services
+None
+No persistent data — read from above via REST
+
+5.1 Data Isolation Enforcement
+	•	Every query to knowledge_base includes WHERE business_id = ? — never fetches all businesses.
+	•	Every query to call_logs includes WHERE business_id = ? — never fetches all businesses.
+	•	The Twilio number → businessId mapping is the gatekeeper — one wrong mapping could break isolation.
+	•	Unit tests must verify that API calls for Business A cannot return Business B data.
+
+
+6. Twilio Integration Details
+
+6.1 Twilio Products Used
+Twilio Product
+Used For
+Twilio Phone Numbers
+Provide unique numbers to each business
+Twilio Voice Webhooks
+HTTP POST to incoming-call-service when customer calls
+Twilio Media Streams
+Real-time bidirectional audio via WebSocket to call-orchestration-service
+Twilio <Gather> TwiML
+Collect customer keypress feedback after call
+Twilio Status Callbacks
+Notify call-orchestration-service when call ends
+Twilio Speech Recognition
+Optional — can use Twilio built-in STT or Deepgram
+
+6.2 Twilio Request Security
+	•	All Twilio webhooks include an X-Twilio-Signature header.
+	•	incoming-call-service and feedback-service must validate this signature on every request.
+	•	Use Twilio Java SDK: RequestValidator.validate(url, params, signature).
+	•	Requests with invalid signatures must be rejected with HTTP 403.
+
+6.3 Number Provisioning Flow
+	•	When a business onboards, user-business-service calls Twilio API to purchase a new number.
+	•	The number is saved to business_phone_numbers table linked to that businessId.
+	•	Twilio number's webhook URL is configured to point to: https://yourdomain.com/twilio/incoming/call.
+
+
+7. Security Architecture
+
+Concern
+Approach
+Authentication
+JWT tokens issued by auth-service, validated at api-gateway on every request.
+Business Data Isolation
+Every DB query includes businessId filter. No cross-business data access possible.
+Twilio Webhooks
+X-Twilio-Signature validated on all Twilio-facing endpoints.
+Password Storage
+BCrypt hashed — never stored in plain text.
+S3 Files
+Each file stored under businessId prefix. IAM policy restricts cross-prefix access.
+API Rate Limiting
+api-gateway enforces rate limits per businessId to prevent abuse.
+Service-to-Service
+Internal services communicate over private network. Not exposed to internet.
+
+
+8. Service Ports Reference
+
+Service
+Port
+Notes
+api-gateway
+8080
+Only service exposed to internet
+auth-service
+8081
+Internal only
+user-business-service
+8082
+Internal only
+knowledge-service
+8083
+Internal only
+dashboard-service
+8084
+Internal only
+incoming-call-service
+8085
+Twilio webhook receiver
+call-orchestration-service
+8086
+WebSocket + HTTP internal
+ai-conversation-service
+8087
+Internal only
+feedback-service
+8088
+Twilio webhook receiver
+conversation-summary-service
+8089
+Internal only
+notification-service
+8090
+Internal only
+admin-service
+8091
+Internal only
+
+
+9. Internal Service Structure — MVC Pattern
+
+Each microservice follows the MVC (Model-View-Controller) pattern internally. The microservices architecture governs how services talk to each other at the macro level; MVC governs how code is organised inside each service at the micro level.
+
+9.1 MVC Layer Responsibilities
+Layer
+Spring Boot Component
+Responsibility
+Controller (C)
+@RestController
+Handles incoming HTTP requests. Validates input. Returns HTTP responses. Contains no business logic.
+Service (S)
+@Service
+All business logic lives here. Calls repositories and other services. Orchestrates operations.
+Repository (R)
+@Repository / JpaRepository
+Direct database interaction. JPA queries. No business logic.
+Model (M)
+@Entity + DTOs
+JPA Entities map to DB tables. DTOs are request/response objects for APIs.
+Config
+@Configuration
+Spring beans, security config, Twilio client setup, S3 client setup.
+
+9.2 Standard Folder Structure (Every Service)
+src/main/java/com/aiassistant/{service-name}/ ├── controller/ │   └── BusinessController.java       ← @RestController, HTTP endpoints ├── service/ │   ├── BusinessService.java          ← @Service, business logic │   └── impl/ │       └── BusinessServiceImpl.java  ← implementation ├── repository/ │   └── BusinessRepository.java       ← @Repository, JPA queries ├── model/ │   ├── entity/ │   │   └── Business.java             ← @Entity, maps to DB table │   └── dto/ │       ├── BusinessRequestDTO.java   ← incoming request body │       └── BusinessResponseDTO.java  ← outgoing response body ├── config/ │   ├── SecurityConfig.java           ← Spring Security config │   └── AppConfig.java                ← Beans, clients ├── exception/ │   ├── BusinessNotFoundException.java │   └── GlobalExceptionHandler.java   ← @ControllerAdvice └── {ServiceName}Application.java     ← @SpringBootApplication main
+
+9.3 Example: user-business-service MVC Flow
+POST /business/register  1. BusinessController.register(@RequestBody BusinessRequestDTO dto)    → validates input, calls BusinessService  2. BusinessService.registerBusiness(BusinessRequestDTO dto)    → checks duplicate email    → hashes password (BCrypt)    → calls Twilio to provision a number    → saves entity via BusinessRepository    → returns BusinessResponseDTO  3. BusinessRepository.save(Business entity)    → JPA persists to Supabase PostgreSQL  4. BusinessController returns HTTP 201 + BusinessResponseDTO
+
+9.4 DTO vs Entity — Rule
+	•	Entities are NEVER returned directly from controllers — always convert to DTO.
+	•	Entities contain DB-specific annotations (@Entity, @Column, @Id).
+	•	DTOs contain only what the API consumer needs — no passwords, no internal IDs leaked.
+	•	Use a mapper class or ModelMapper library to convert between Entity and DTO.
+
+
+10. Database — Supabase (PostgreSQL)
+
+10.1 Why Supabase for MVP
+Factor
+Supabase
+Self-hosted PostgreSQL
+Setup time
+2 minutes
+30-60 minutes
+Maintenance
+Fully managed
+You manage backups, patches, scaling
+Cost (MVP)
+Free tier (generous)
+~$10-20/month minimum
+Dashboard
+Built-in table editor, SQL editor
+Need separate tool (DBeaver, pgAdmin)
+Connection pooling
+Built-in (PgBouncer)
+Must configure manually
+Backups
+Automatic daily backups
+Must set up yourself
+Migration path
+Easy — just PostgreSQL underneath
+N/A
+
+10.2 Database Per Service Strategy
+Each service that owns data gets its own Supabase project OR a separate schema within one Supabase project. For MVP, using separate schemas in one Supabase project is simpler and free.
+
+Service
+Schema
+Tables
+user-business-service
+business_schema
+businesses, business_phone_numbers, rating_config
+knowledge-service
+knowledge_schema
+knowledge_base
+call-orchestration-service
+calls_schema
+call_logs
+
+10.3 Spring Boot Connection Config (application.properties)
+# Supabase PostgreSQL connection spring.datasource.url=jdbc:postgresql://db.{ref}.supabase.co:5432/postgres spring.datasource.username=postgres spring.datasource.password=${SUPABASE_DB_PASSWORD} spring.datasource.driver-class-name=org.postgresql.Driver  # JPA / Hibernate spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect spring.jpa.hibernate.ddl-auto=update spring.jpa.show-sql=false spring.jpa.properties.hibernate.format_sql=true  # Connection pool (HikariCP — Spring Boot default) spring.datasource.hikari.maximum-pool-size=10 spring.datasource.hikari.minimum-idle=2 spring.datasource.hikari.connection-timeout=30000
+
+10.4 Migration Path (When to Move On)
+	•	Stay on Supabase free tier until: 500MB storage OR 2GB bandwidth per month is reached.
+	•	When product has paying customers → migrate to AWS RDS PostgreSQL or Neon.tech.
+	•	Migration is zero-code change — only update the JDBC URL in environment variables.
+	•	All JPA queries, entities, and repositories stay exactly the same.
+
+
+11. Deployment — Railway.app
+
+11.1 Why Railway for MVP
+Factor
+Railway.app
+AWS ECS / Kubernetes
+Setup time
+15 minutes per service
+2-4 hours minimum
+Cost (MVP)
+$5-20/month for all services
+$50-100+/month
+Complexity
+Connect GitHub → auto-deploy
+Dockerfiles, task definitions, IAM roles
+Scaling
+One click
+Complex autoscaling config
+Environment variables
+Simple UI
+Parameter Store / Secrets Manager
+When to move
+When traffic is consistent + high
+Production scale with SLA requirements
+
+11.2 Deployment Architecture on Railway
+Railway Project: ai-customer-service ├── Service: api-gateway              (GitHub repo: api-gateway) ├── Service: auth-service             (GitHub repo: auth-service) ├── Service: user-business-service    (GitHub repo: user-business-service) ├── Service: knowledge-service        (GitHub repo: knowledge-service) ├── Service: dashboard-service        (GitHub repo: dashboard-service) ├── Service: incoming-call-service    (GitHub repo: incoming-call-service) ├── Service: call-orchestration-service ├── Service: ai-conversation-service ├── Service: feedback-service ├── Service: conversation-summary-service ├── Service: notification-service └── Service: admin-service
+
+11.3 How Each Service Deploys on Railway
+	•	Each Spring Boot service has a Dockerfile in its root.
+	•	Connect the GitHub repo to Railway — it auto-detects the Dockerfile.
+	•	On every git push to main branch → Railway automatically rebuilds and redeploys.
+	•	Environment variables (API keys, DB passwords) are set in Railway's dashboard — never in code.
+	•	Each service gets a private Railway internal URL (e.g. api-gateway.railway.internal:8080).
+	•	Only api-gateway gets a public domain exposed to the internet.
+
+11.4 Standard Dockerfile (Every Spring Boot Service)
+FROM eclipse-temurin:17-jdk-alpine AS builder WORKDIR /app COPY pom.xml . COPY src ./src RUN ./mvnw clean package -DskipTests  FROM eclipse-temurin:17-jre-alpine WORKDIR /app COPY --from=builder /app/target/*.jar app.jar EXPOSE 8080 ENTRYPOINT ["java", "-jar", "app.jar"]
+
+11.5 Environment Variables Per Service
+Variable
+Used By
+Value Source
+SUPABASE_DB_PASSWORD
+All DB services
+Supabase dashboard
+SUPABASE_DB_URL
+All DB services
+Supabase dashboard
+JWT_SECRET
+auth-service, api-gateway
+Generate a strong random string
+TWILIO_ACCOUNT_SID
+incoming-call, user-business, feedback
+Twilio console
+TWILIO_AUTH_TOKEN
+incoming-call, user-business, feedback
+Twilio console
+CLAUDE_API_KEY
+ai-conversation-service
+Anthropic console
+AWS_S3_BUCKET
+knowledge-service
+AWS S3 console
+AWS_ACCESS_KEY_ID
+knowledge-service
+AWS IAM console
+AWS_SECRET_ACCESS_KEY
+knowledge-service
+AWS IAM console
+SENDGRID_API_KEY
+notification-service
+SendGrid dashboard
+
+11.6 Complete Infrastructure Stack
+Layer
+Technology
+Cost (MVP)
+Service Hosting
+Railway.app
+~$10-20/month
+Database
+Supabase (PostgreSQL)
+Free tier
+File Storage
+AWS S3
+~$1-2/month for MVP
+Voice / Telephony
+Twilio
+~$1/number/month + per-minute usage
+AI Engine
+Anthropic Claude API
+Pay per token — very low for MVP
+Email Notifications
+SendGrid
+Free tier (100 emails/day)
+Total Estimated MVP Cost
+
+~$15-25/month
+
+
+12. Recommended Build Order for Phase 1
+
+Build services in this order to enable end-to-end testing at each stage.
+
+Priority
+Service
+Why First
+1
+user-business-service
+Foundation — everything depends on business identity
+2
+auth-service
+Needed for all authenticated endpoints
+3
+api-gateway
+Connects all services behind one entry point
+4
+knowledge-service
+Required before AI can answer anything
+5
+ai-conversation-service
+Core AI logic — test with mock business data first
+6
+incoming-call-service
+Start Twilio integration
+7
+call-orchestration-service
+Most complex — build last in core flow
+8
+feedback-service
+Add after basic call flow works
+9
+conversation-summary-service
+Post-call processing
+10
+notification-service
+Post-call processing
+11
+dashboard-service
+Business dashboard — reads from completed services
+12
+admin-service
+Final — platform metrics
+

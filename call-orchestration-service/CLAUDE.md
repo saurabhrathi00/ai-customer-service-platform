@@ -354,6 +354,62 @@ Core scaffolding and the live-call loop are built. Items still open:
 
 ---
 
+## Noise / Multi-speaker Roadmap
+
+Real-world calls are noisy: TV, traffic, kids, family handing the phone over,
+two people on speakerphone, line echo. The current build handles the simple
+cases; this section lists what's done and what remains.
+
+### Done (Tier 1 — basic resilience)
+- **STT confidence gate** — `configs.stt.confidenceThreshold` (default `0.5`).
+  Transcripts below this are dropped before the LLM sees them. Tunable per
+  deployment.
+- **Bot-speaking mute** — `configs.stt.muteWhileBotSpeaking` (default `true`).
+  Inbound audio frames are discarded while TTS is mid-playback so the bot
+  doesn't transcribe its own voice. Implemented via an `AtomicInteger`
+  in-flight counter in `TwilioMediaStreamHandler.AiCallEventListener.synthesize`
+  — set on submit, cleared when the counter returns to zero. No barge-in
+  support today; this is the safe option.
+- **Twilio `track=inbound_track`** — set on `<Stream>` in
+  `incoming-call-service/.../TwilioProvider.buildStreamHandoff`. Twilio only
+  sends the caller's leg, eliminating echo from our own TTS at the carrier.
+
+### Open (Tier 2 — application-level resilience)
+- **Garbled-input prompting** — system prompt addition in ai-conv:
+  "If the user's message looks like gibberish or unrelated, politely re-ask."
+  Model-level handling, no new code in call-orch.
+- **Repeat-back confirmation** — for phone numbers, addresses, OTPs the bot
+  should read the value back verbatim and wait for "yes/no" before committing.
+  Lives in the system prompt + ai-conv tool-call contract.
+- **Failure counter → auto-callback** — track consecutive low-confidence /
+  empty STT finals on `CallSession`; after N (e.g. 3), short-circuit to the
+  `CALLBACK_NEEDED` path so the call doesn't loop in confusion.
+- **Silence/dead-air detection** — schedule a watchdog that prompts
+  *"Kya aap line par hain?"* after ~15s of no inbound audio; hangs up after
+  ~30s of continued silence. Uses the existing
+  `providerAttributes["firstFrameMs"]` plumbing.
+
+### Open (Tier 3 — hard problems)
+- **Speaker diarization** — primary-speaker pinning when multiple voices share
+  the handset. Deepgram Nova-3 has native diarization in its streaming API;
+  ElevenLabs Scribe realtime is currently weaker here. Likely means swapping
+  STT provider for high-noise deployments. Add `speakerId` to
+  `TranscriptEvent`, track `session.primarySpeakerId`, drop non-primary
+  segments (with re-pinning if primary goes silent > 30s).
+- **Audio-quality probe at call start** — capture the first 2s of inbound
+  audio, compute RMS energy / SNR, adjust `confidenceThreshold` dynamically.
+  Optionally warn the caller if SNR is below floor.
+- **Dual-STT vote** — for critical turns (KYC, payment), fan out the same
+  audio to two STT providers and accept only on agreement. 2× cost; gate
+  behind a per-business config.
+- **Proper barge-in** — let the caller interrupt the bot. Requires:
+  (a) continuous VAD even while TTS plays, (b) energy threshold tuned to
+  reject the carrier echo, (c) cancellation of in-flight TTS chunks to
+  Twilio (clear the streamSid buffer), (d) state machine for "bot was
+  interrupted mid-sentence" so the model knows to re-evaluate.
+
+---
+
 ## Reference Patterns
 - `incoming-call-service` — provider strategy boilerplate to copy
 - `user-business-service/security` — JWT filter + tenant guard

@@ -1,5 +1,6 @@
 package com.aiassistant.incomingcall.provider.twilio;
 
+import com.aiassistant.incomingcall.configuration.ServiceConfiguration;
 import com.aiassistant.incomingcall.provider.IncomingCallRequest;
 import com.aiassistant.incomingcall.provider.StreamHandoff;
 import com.aiassistant.incomingcall.provider.TelephonyProvider;
@@ -27,6 +28,7 @@ public class TwilioProvider implements TelephonyProvider {
     private static final String SIGNATURE_HEADER = "X-Twilio-Signature";
 
     private final RequestValidator requestValidator;
+    private final ServiceConfiguration serviceConfiguration;
 
     @Override
     public String name() {
@@ -65,13 +67,34 @@ public class TwilioProvider implements TelephonyProvider {
 
     @Override
     public TelephonyResponse buildStreamHandoff(StreamHandoff handoff) {
+        // track=inbound_track: receive ONLY the caller's audio, not our own TTS bleed-back.
+        // Eliminates echo and stops STT from transcribing the bot's own voice.
         Stream stream = new Stream.Builder()
                 .url(handoff.getWsUrl())
+                .track(Stream.Track.INBOUND_TRACK)
                 .parameter(new Parameter.Builder().name("businessId").value(handoff.getBusinessId()).build())
                 .parameter(new Parameter.Builder().name("customerPhone").value(handoff.getCustomerPhone()).build())
                 .build();
         Connect connect = new Connect.Builder().stream(stream).build();
-        String xml = new VoiceResponse.Builder().connect(connect).build().toXml();
+
+        // Spoken pre-roll runs synchronously on Twilio's side. The Media Stream
+        // only connects after <Say> finishes, giving call-orchestration-service
+        // a ~3s window to load knowledge, open the AI WS, and prepare the
+        // greeting — so the caller never hears dead silence.
+        VoiceResponse.Builder builder = new VoiceResponse.Builder();
+        ServiceConfiguration.TwilioPreRoll pre = serviceConfiguration.getTwilioPreRoll();
+        if (pre != null && pre.isEnabled() && pre.getText() != null && !pre.getText().isBlank()) {
+            Say.Builder sayBuilder = new Say.Builder(pre.getText());
+            if (pre.getVoice() != null && !pre.getVoice().isBlank()) {
+                sayBuilder.voice(Say.Voice.valueOf(pre.getVoice().toUpperCase().replace('.', '_').replace('-', '_')));
+            }
+            if (pre.getLanguage() != null && !pre.getLanguage().isBlank()) {
+                sayBuilder.language(Say.Language.valueOf(pre.getLanguage().toUpperCase().replace('-', '_')));
+            }
+            builder.say(sayBuilder.build());
+        }
+
+        String xml = builder.connect(connect).build().toXml();
         return new TelephonyResponse(xml, MediaType.APPLICATION_XML);
     }
 

@@ -1,0 +1,141 @@
+# Production docker-compose for the AI Customer Service Platform.
+#
+# Secrets layout on the host (NOT in this repo):
+#   /etc/secrets/auth-service/secrets.properties
+#   /etc/secrets/user-business-service/secrets.properties
+#   /etc/secrets/knowledge-service/secrets.properties
+#   /etc/secrets/incoming-call-service/secrets.properties
+#   /etc/secrets/call-orchestration-service/secrets.properties
+#   /etc/secrets/ai-conversation-service/secrets.properties
+#
+# Each is mounted read-only into the container at /etc/secrets/secrets.properties.
+# Non-sensitive configs are baked into each image at /app/configs/.
+#
+# Inter-service URLs are overridden via environment variables (Spring relaxed
+# binding). The values baked into configs/service.properties default to
+# localhost for local dev; in compose they resolve to container hostnames.
+
+name: ai-customer-service
+
+networks:
+  backend:
+    driver: bridge
+
+services:
+
+  auth-service:
+    build:
+      context: ./auth-service
+    image: ai-customer-service/auth-service:latest
+    container_name: auth-service
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - /etc/secrets/auth-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+
+  user-business-service:
+    build:
+      context: ./user-business-service
+    image: ai-customer-service/user-business-service:latest
+    container_name: user-business-service
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    volumes:
+      - /etc/secrets/user-business-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+
+  knowledge-service:
+    build:
+      context: ./knowledge-service
+    image: ai-customer-service/knowledge-service:latest
+    container_name: knowledge-service
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+    volumes:
+      - /etc/secrets/knowledge-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy
+
+  ai-conversation-service:
+    build:
+      context: ./ai-conversation-service
+    image: ai-customer-service/ai-conversation-service:latest
+    container_name: ai-conversation-service
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+    volumes:
+      - /etc/secrets/ai-conversation-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+
+  call-orchestration-service:
+    build:
+      context: ./call-orchestration-service
+    image: ai-customer-service/call-orchestration-service:latest
+    container_name: call-orchestration-service
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+      CONFIGS_KNOWLEDGESERVICE_BASEURL: http://knowledge-service:8083/knowledge-service
+      CONFIGS_AICONVERSATIONSERVICE_BASEURL: http://ai-conversation-service:8087/ai-conversation-service
+      CONFIGS_AICONVERSATIONSERVICE_WSBASEURL: ws://ai-conversation-service:8087/ai-conversation-service/ws/conversation
+    volumes:
+      - /etc/secrets/call-orchestration-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy
+      knowledge-service:
+        condition: service_healthy
+      ai-conversation-service:
+        condition: service_healthy
+
+  incoming-call-service:
+    build:
+      context: ./incoming-call-service
+    image: ai-customer-service/incoming-call-service:latest
+    container_name: incoming-call-service
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+    volumes:
+      - /etc/secrets/incoming-call-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy

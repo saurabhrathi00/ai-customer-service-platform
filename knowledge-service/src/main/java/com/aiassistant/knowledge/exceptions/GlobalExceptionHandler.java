@@ -1,6 +1,8 @@
 package com.aiassistant.knowledge.exceptions;
 
 import com.aiassistant.knowledge.models.error.ApiError;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -14,6 +16,8 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(NotFoundException ex) {
@@ -56,7 +60,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleAll(Exception ex) {
-        ex.printStackTrace();
+        log.error("Unhandled exception", ex);
         return new ResponseEntity<>(
                 new ApiError(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong"),
                 HttpStatus.INTERNAL_SERVER_ERROR);

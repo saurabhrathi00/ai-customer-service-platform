@@ -10,10 +10,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.util.List;
 import java.util.Map;
 
 @Component
 public class ConversationSummaryServiceClient {
+
+    private static final String AUDIENCE = "conversation-summary-service";
+    private static final List<String> SCOPES = List.of("summary.internal.invoke");
 
     private static final Logger log = LoggerFactory.getLogger(ConversationSummaryServiceClient.class);
 
@@ -31,7 +35,7 @@ public class ConversationSummaryServiceClient {
             log.info("Requesting summary call={}", callId);
             conversationSummaryServiceRestClient.post()
                     .uri("/api/internal/summary/generate")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .body(Map.of(
                             "businessId", businessId,
                             "callId", callId,

@@ -1,0 +1,446 @@
+AI Customer Service Platform
+Product Requirements Document (PRD)
+Phase 1 — MVP
+Field
+Detail
+Version
+1.0.0
+Phase
+Phase 1 — MVP
+Status
+Draft
+Date
+18 May 2026
+Author
+Product Team
+
+
+1. Product Overview
+
+1.1 Product Vision
+An AI-powered 24/7 customer service platform that acts as an intelligent middleman between small businesses and their customers. When a customer calls a business number, the AI intercepts the call, answers queries using business-specific knowledge, and ensures no customer goes unattended — even outside business hours.
+
+1.2 Platform Type
+B2C platform — the company acts as the intermediary connecting businesses (clients) with their end customers.
+
+1.3 Problem Statement
+	•	Small businesses cannot afford 24/7 customer support staff.
+	•	Customers calling after hours get no response, leading to lost business.
+	•	Businesses miss follow-up opportunities due to lack of call tracking.
+	•	Setting up AI voice systems directly (e.g., Twilio) requires technical expertise small businesses don't have.
+
+1.4 Solution
+	•	Provide a plug-and-play AI voice assistant for each business.
+	•	Each business gets a dedicated Twilio phone number.
+	•	AI answers customer calls 24/7 using only that business's knowledge base.
+	•	Complete isolation — Business A's AI never accesses Business B's data.
+	•	Call summaries, customer details, and interest ratings saved automatically for business follow-up.
+
+
+2. Actors / User Roles
+
+
+Actor
+Description
+Has Login?
+Super Admin
+Platform owner — manages all businesses, monitors platform health
+Yes
+Business
+Small business owner — onboards, uploads knowledge, views dashboard
+Yes
+Customer
+End user — calls the business number, interacts with AI
+No
+
+
+3. Functional Requirements
+
+3.1 Business Onboarding
+3.1.1 Registration & Authentication
+	•	Business can self-register on the platform (email + password).
+	•	Email verification required before onboarding.
+	•	Secure login/logout functionality.
+	•	Password reset via email.
+
+3.1.2 Business Profile Setup
+	•	After registration, business fills in their profile:
+	•	Business name
+	•	Business type / category
+	•	Business description
+	•	Location / address
+	•	Operating hours
+	•	Contact email
+	•	Each business is assigned a unique Business ID (primary key) upon registration.
+
+3.1.3 Phone Number Assignment
+	•	A unique Twilio phone number is assigned to each business upon onboarding.
+	•	A business can have multiple phone numbers associated with it.
+	•	Businesses do NOT need to change their existing number — the Twilio number is an additional number for AI interaction.
+	•	Phone number is stored and mapped to the Business ID in the database.
+
+3.1.4 Knowledge Base Upload
+	•	Business can upload knowledge materials after onboarding.
+	•	Supported file types: PDF, TXT, Images (JPG, PNG).
+	•	Files stored in cloud blob storage (AWS S3 or equivalent).
+	•	Expected size: a few KBs to max 4-5 MB per business.
+	•	Business can update or delete knowledge materials at any time.
+	•	Each file is tagged to its Business ID — no cross-business access possible.
+
+3.2 Customer Call Flow
+3.2.1 Call Routing & Identification
+	•	Customer dials the Twilio number assigned to a business.
+	•	Twilio webhook fires to our system with the incoming number.
+	•	System looks up which business owns that Twilio number.
+	•	Loads ONLY the knowledge base of that specific business.
+	•	Strict isolation — no data from other businesses is ever loaded.
+
+3.2.2 AI Conversation
+	•	AI greets the customer on behalf of the business.
+	•	AI answers customer questions using only the loaded business knowledge.
+	•	AI collects basic customer details during conversation:
+	•	Customer name
+	•	Customer phone number (auto-captured via Twilio)
+	•	Nature of query
+
+3.2.3 Scenario Handling
+
+Scenario
+AI Behaviour
+AI has sufficient answer
+Continues conversation, answers queries, ends call normally.
+AI cannot answer / lacks info
+Responds: "Our team will get back to you within 24 hours." Saves callback request.
+Customer explicitly asks for human
+Same as above — saves callback request with high priority.
+
+3.2.4 Post-Call Feedback
+	•	At the end of every call, AI asks for quick feedback.
+	•	Customer is prompted: "Were your questions answered? Press 1 for Yes, Press 2 for No."
+	•	Feedback response is recorded and saved against the call record.
+
+3.2.5 Post-Call Data Saved
+	•	Call summary (AI-generated).
+	•	Customer basic details (name, phone, query type).
+	•	Feedback score.
+	•	Interest rating score (calculated based on business configuration).
+	•	Timestamp of call.
+	•	Call duration.
+	•	Whether callback was requested.
+
+3.3 Interest Rating System
+Each call is assigned an interest rating score to help businesses prioritise which customers to follow up with. The scoring rules are configurable per business.
+
+3.3.1 Configurable Scoring Rules
+Signal
+Default Score
+Configurable?
+Call duration > 3 minutes
++2
+Yes
+Positive feedback given (Press 1)
++2
+Yes
+Requested human / callback
++3
+Yes
+Negative feedback given (Press 2)
+-1
+Yes
+Call duration < 30 seconds
+-2
+Yes
+AI could not answer query
++1
+Yes
+
+	•	Each business can customise these weights via their dashboard settings.
+	•	Configuration is stored per Business ID — different businesses can have different scoring rules.
+	•	Interest rating is displayed as a star score (1-5) on the dashboard.
+
+3.4 Business Dashboard
+3.4.1 Recent Calls Section (Last 24 Hours)
+	•	Displays all calls received in the last 24 hours.
+	•	Columns shown:
+	•	Customer Name
+	•	Phone Number
+	•	Query Summary (AI-generated)
+	•	Call Duration
+	•	Time of Call
+	•	Interest Rating (star display)
+	•	Feedback Given
+
+3.4.2 Priority Callback List
+	•	Shows customers who:
+	•	AI could NOT answer their query, OR
+	•	Explicitly requested to speak to a human.
+	•	Sorted by time in ASCENDING order (earliest first).
+	•	Columns shown:
+	•	Time of Call
+	•	Customer Name
+	•	Phone Number
+	•	Their Query / Reason for Callback
+
+3.4.3 Knowledge Base Management
+	•	Business can view all uploaded files.
+	•	Can upload new files (PDF, TXT, Images).
+	•	Can delete existing files.
+	•	Updated knowledge is reflected in AI responses for future calls.
+
+3.4.4 Rating Configuration
+	•	Business can adjust interest rating scoring rules.
+	•	Each signal weight can be updated independently.
+	•	Changes apply to future calls only.
+
+3.5 Super Admin Dashboard
+The super admin has a bird's-eye view of the entire platform.
+
+3.5.1 Platform Metrics
+Metric
+Description
+Total Businesses Onboarded
+All-time count of registered businesses.
+Active Businesses
+Businesses with at least one call in the last 30 days.
+Total Calls (All Time)
+Cumulative call count across all businesses.
+Calls Today
+Total calls received today across platform.
+Callback Requests Today
+Total unresolved callback requests today.
+Average Call Duration
+Platform-wide average call duration.
+
+	•	More metrics to be added in future phases.
+
+
+4. Non-Functional Requirements
+
+
+Category
+Requirement
+Availability
+System must be available 24/7 — AI must answer calls at any time.
+Data Isolation
+Strict multi-tenant isolation — Business A can never access Business B's data.
+Scalability
+Architecture must support multiple businesses independently.
+Storage
+Knowledge base files stored in S3 / cloud blob storage per business.
+File Size Limit
+Max 4-5 MB per business for knowledge base files.
+Security
+Business login secured with hashed passwords. API endpoints authenticated.
+Call Handling
+System must respond to incoming Twilio webhook within acceptable latency.
+AI Response Quality
+AI must only answer from the specific business's knowledge base.
+
+
+5. Core Data Models
+
+5.1 Business
+Field
+Type
+Description
+id
+UUID / Long
+Unique Business ID (Primary Key)
+name
+String
+Business name
+email
+String
+Login email
+passwordHash
+String
+Hashed password
+category
+String
+Business type/category
+description
+String
+Business description
+location
+String
+Business address
+operatingHours
+String/JSON
+Business operating hours
+createdAt
+Timestamp
+Registration date
+isActive
+Boolean
+Whether business is active on platform
+
+5.2 BusinessPhoneNumber
+Field
+Type
+Description
+id
+UUID / Long
+Primary Key
+businessId
+UUID / Long
+Foreign Key → Business
+twilioNumber
+String
+Twilio phone number assigned
+label
+String
+Optional label (e.g., Sales, Support)
+isActive
+Boolean
+Whether number is active
+createdAt
+Timestamp
+Date assigned
+
+5.3 KnowledgeBase
+Field
+Type
+Description
+id
+UUID / Long
+Primary Key
+businessId
+UUID / Long
+Foreign Key → Business
+fileName
+String
+Original file name
+fileType
+String
+PDF / TXT / IMAGE
+s3Url
+String
+S3 storage URL
+extractedText
+Text
+Parsed text content for AI
+uploadedAt
+Timestamp
+Upload timestamp
+
+5.4 CallLog
+Field
+Type
+Description
+id
+UUID / Long
+Primary Key
+businessId
+UUID / Long
+Foreign Key → Business
+customerPhone
+String
+Customer phone number
+customerName
+String
+Customer name (from conversation)
+queryType
+String
+Nature of customer query
+callSummary
+Text
+AI-generated call summary
+callDuration
+Integer
+Duration in seconds
+feedbackScore
+Integer
+1 = Satisfied, 2 = Not Satisfied, null = No feedback
+interestRating
+Integer
+Computed interest score
+callbackRequested
+Boolean
+Whether callback was requested
+callTimestamp
+Timestamp
+When the call happened
+
+5.5 RatingConfig
+Field
+Type
+Description
+id
+UUID / Long
+Primary Key
+businessId
+UUID / Long
+Foreign Key → Business
+signalKey
+String
+e.g., LONG_CALL, POSITIVE_FEEDBACK
+scoreValue
+Integer
+Score assigned for this signal
+updatedAt
+Timestamp
+Last updated
+
+
+6. Proposed Tech Stack (MVP)
+
+
+Layer
+Technology
+Purpose
+Backend
+Java + Spring Boot
+Core application, REST APIs, Twilio webhooks
+Database
+PostgreSQL
+Persistent storage for all entities
+Blob Storage
+AWS S3
+Knowledge base file storage per business
+Voice/Telephony
+Twilio Voice API
+Incoming call handling, speech-to-text, TTS
+AI Engine
+Claude API (Anthropic)
+Conversation AI, call summaries, query answering
+Architecture
+Microservices
+Each domain as an independent service
+Auth
+Spring Security + JWT
+Business login and API security
+
+
+7. Out of Scope for Phase 1
+
+	•	WhatsApp integration (planned for Phase 2).
+	•	SMS support (planned for Phase 2).
+	•	Customer login / portal.
+	•	Payment processing.
+	•	CRM integrations.
+	•	Multi-language support.
+	•	Live call transfer to human agent.
+	•	IVR / menu-based call routing.
+	•	Mobile app for businesses.
+
+
+8. Future Phases (High Level)
+
+
+Phase
+Key Features
+Phase 2
+WhatsApp integration, SMS support, advanced analytics
+Phase 3
+Business mobile app, CRM integrations, payment collection via call
+Phase 4
+Live call transfer, multi-language, custom AI persona per business
+
+9. Open Questions / To Be Decided
+
+	•	Pricing model for businesses (per call / flat monthly / tiered).
+	•	How many Twilio numbers can one business have in MVP?
+	•	Should AI behaviour change based on business operating hours in Phase 1?
+	•	Email notification to business when callback is requested — in Phase 1 or Phase 2?
+	•	Super admin ability to manually approve/reject business onboarding — needed in Phase 1?
+

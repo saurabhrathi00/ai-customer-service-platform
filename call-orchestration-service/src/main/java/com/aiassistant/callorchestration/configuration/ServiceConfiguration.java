@@ -41,8 +41,6 @@ public class ServiceConfiguration {
     @Data
     public static class AuthService {
         private String baseUrl;
-        private String audience;
-        private String scopes;
     }
 
     @Data
@@ -66,6 +64,12 @@ public class ServiceConfiguration {
     @Data
     public static class Stt {
         private String provider;
+        /** Transcripts below this confidence are sent as UNCLEAR_MESSAGE
+         *  instead of MESSAGE — ai-conv responds with a canned "please repeat"
+         *  reply (no LLM round-trip). */
+        private Double confidenceThreshold = 0.5;
+        /** Pause STT input while the bot is speaking — prevents echo/self-hearing. */
+        private boolean muteWhileBotSpeaking = true;
     }
 
     @Data
@@ -81,5 +85,14 @@ public class ServiceConfiguration {
         private boolean sttIncludeLanguageDetection;
         private String sttCommitStrategy;
         private boolean sttNoVerbatim;
+
+        private String ttsBaseUrl;
+        private String ttsVoiceId;
+        private String ttsModelId;
+        private String ttsOutputFormat;
+        private Double ttsStability;
+        private Double ttsSimilarityBoost;
+        private Double ttsStyle;
+        private Boolean ttsUseSpeakerBoost;
     }
 }

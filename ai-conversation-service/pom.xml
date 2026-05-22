@@ -88,6 +88,15 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Native DNS resolver for macOS (silences netty warning, faster/correct DNS).
+		     Apple Silicon: classifier osx-aarch_64. For Intel Macs use osx-x86_64. -->
+		<dependency>
+			<groupId>io.netty</groupId>
+			<artifactId>netty-resolver-dns-native-macos</artifactId>
+			<classifier>osx-aarch_64</classifier>
+			<scope>runtime</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

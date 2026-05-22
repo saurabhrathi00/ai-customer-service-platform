@@ -11,10 +11,14 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
 public class NotificationServiceClient {
+
+    private static final String AUDIENCE = "notification-service";
+    private static final List<String> SCOPES = List.of("notify.internal.invoke");
 
     private static final Logger log = LoggerFactory.getLogger(NotificationServiceClient.class);
 
@@ -36,7 +40,7 @@ public class NotificationServiceClient {
             payload.put("summary", summary);
             notificationServiceRestClient.post()
                     .uri("/api/internal/notify/callback")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .body(payload)
                     .retrieve()
                     .toBodilessEntity();

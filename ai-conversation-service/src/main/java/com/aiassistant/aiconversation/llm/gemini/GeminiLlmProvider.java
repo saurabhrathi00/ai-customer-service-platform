@@ -21,10 +21,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Flux;
 
-import java.net.URI;
 import java.time.Duration;
 
 @Component
@@ -63,13 +61,11 @@ public class GeminiLlmProvider implements LlmProvider {
         ParameterizedTypeReference<ServerSentEvent<String>> sseType =
                 new ParameterizedTypeReference<>() {};
 
-        URI uri = UriComponentsBuilder.fromPath("/v1beta/models/{model}:streamGenerateContent")
-                .queryParam("alt", "sse")
-                .queryParam("key", creds.getApiKey())
-                .buildAndExpand(model).toUri();
-
         return webClient.post()
-                .uri(uri)
+                .uri(b -> b.path("/v1beta/models/{model}:streamGenerateContent")
+                        .queryParam("alt", "sse")
+                        .queryParam("key", creds.getApiKey())
+                        .build(model))
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE)
                 .bodyValue(body)
@@ -88,13 +84,11 @@ public class GeminiLlmProvider implements LlmProvider {
         String model = modelOf(request);
         ObjectNode body = buildBody(request);
 
-        URI uri = UriComponentsBuilder.fromPath("/v1beta/models/{model}:generateContent")
-                .queryParam("key", creds.getApiKey())
-                .buildAndExpand(model).toUri();
-
         try {
             JsonNode resp = webClient.post()
-                    .uri(uri)
+                    .uri(b -> b.path("/v1beta/models/{model}:generateContent")
+                            .queryParam("key", creds.getApiKey())
+                            .build(model))
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .bodyValue(body)
                     .retrieve()

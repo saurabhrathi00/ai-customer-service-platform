@@ -12,6 +12,7 @@ public class ServiceConfiguration {
     private UserBusinessService userBusinessService;
     private AuthService authService;
     private CallOrchestration callOrchestration;
+    private TwilioPreRoll twilioPreRoll;
 
     @Data
     public static class UserBusinessService {
@@ -28,6 +29,19 @@ public class ServiceConfiguration {
     @Data
     public static class CallOrchestration {
         private String wsBaseUrl;
+    }
+
+    /**
+     * Pre-roll message Twilio plays before connecting the Media Stream.
+     * Buys call-orchestration-service time to load knowledge + open the AI WS
+     * so the bot's first audio lands immediately after the stream opens.
+     */
+    @Data
+    public static class TwilioPreRoll {
+        private boolean enabled = true;
+        private String text;
+        private String voice;
+        private String language;
     }
 
 }

@@ -8,6 +8,8 @@ import com.aiassistant.incomingcall.models.response.ServiceTokenResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -38,6 +40,19 @@ public class ServiceTokenClient {
         this.authServiceRestClient = authServiceRestClient;
         this.serviceConfiguration = serviceConfiguration;
         this.secretsConfiguration = secretsConfiguration;
+    }
+
+    /**
+     * Pre-warm the token at app startup so the first incoming-call webhook
+     * doesn't pay the auth-service round-trip cost.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void prewarm() {
+        try {
+            getToken();
+        } catch (RuntimeException ex) {
+            log.warn("Service token pre-warm failed; will retry on first call: {}", ex.getMessage());
+        }
     }
 
     public synchronized String getToken() {

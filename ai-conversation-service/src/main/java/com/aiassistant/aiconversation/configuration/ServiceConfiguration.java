@@ -13,6 +13,7 @@ public class ServiceConfiguration {
     private Llm llm;
     private Session session;
     private Summary summary;
+    private Prompts prompts;
 
     @Data
     public static class AuthService {
@@ -44,5 +45,16 @@ public class ServiceConfiguration {
     public static class Summary {
         private int maxOutputTokens;
         private double temperature;
+    }
+
+    /**
+     * External prompt file paths. When blank, the bundled classpath default is used.
+     * When set, the file is read from disk at startup so the prompt can be edited
+     * in production without rebuilding the service.
+     */
+    @Data
+    public static class Prompts {
+        /** Filesystem path for the conversation system prompt. */
+        private String systemPromptPath;
     }
 }

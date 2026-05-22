@@ -31,8 +31,6 @@ public class MediaStreamDispatcherHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession ws) throws Exception {
-        log.info(">>> WS connection established post-handshake uri={} attrs={}",
-                ws.getUri(), ws.getAttributes());
         PathParts parts = parsePath(ws);
         if (parts == null) {
             log.warn("WebSocket open with unparseable URI: {}", ws.getUri());
@@ -54,6 +52,7 @@ public class MediaStreamDispatcherHandler extends TextWebSocketHandler {
         callSessionRegistry.put(session);
         ws.getAttributes().put("callId", parts.callId);
         ws.getAttributes().put("provider", parts.provider);
+        session.getProviderAttributes().put("ws", ws);
         handler.get().onConnect(session, Map.of());
         log.info("WS connected provider={} callId={}", parts.provider, parts.callId);
     }

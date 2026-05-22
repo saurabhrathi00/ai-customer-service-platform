@@ -8,10 +8,22 @@ public enum WsMessageType {
     // Outbound (this service → ai-conversation)
     INIT,
     MESSAGE,
+    /** STT confidence below threshold; ai-conv responds with a "please repeat"
+     *  message instead of running an LLM turn. */
+    UNCLEAR_MESSAGE,
+    /** Caller has been silent for too long; ai-conv replies with a prompt to
+     *  re-engage, escalating to {@link #HANGUP} after repeats. */
+    SILENCE_PROMPT,
     END,
 
     // Inbound (ai-conversation → this service)
     RESPONSE,
+    /** Partial text chunk during a streaming reply. */
+    RESPONSE_DELTA,
+    /** Terminal frame for a streaming reply — finishReason + usage. */
+    RESPONSE_DONE,
+    /** ai-conv says the call should be terminated. Reasons: GOODBYE, UNCLEAR, SILENCE. */
+    HANGUP,
     KNOWLEDGE_REQUEST,
     CALLBACK_NEEDED,
     /**

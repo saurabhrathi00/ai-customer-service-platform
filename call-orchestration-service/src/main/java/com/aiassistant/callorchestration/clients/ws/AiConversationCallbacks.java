@@ -13,11 +13,26 @@ public interface AiConversationCallbacks {
     /** AI replied to a customer message. {@code replyToMessageId} matches the MESSAGE id we sent. */
     void onResponse(String conversationId, String replyToMessageId, String text);
 
+    /** Streaming partial — one of many until {@link #onResponseDone} fires. */
+    void onResponseDelta(String conversationId, String replyToMessageId, String deltaText);
+
+    /** Streaming terminal — no more deltas for this turn. */
+    void onResponseDone(String conversationId, String replyToMessageId, String finishReason);
+
     /** ai-conv is missing knowledge — we must send another INIT with the rendered knowledge. */
     void onKnowledgeRequest(String conversationId);
 
-    /** AI could not answer from the supplied knowledge — trigger the callback flow. */
-    void onCallbackNeeded(String conversationId, String replyToMessageId);
+    /**
+     * AI could not answer from the supplied knowledge — trigger the callback flow.
+     * {@code spokenText} is an optional short line in the customer's language to
+     * speak before transitioning to the human-callback flow (may be null).
+     */
+    void onCallbackNeeded(String conversationId, String replyToMessageId, String spokenText);
+
+    /** ai-conv has decided to end the call. Telephony should speak {@code spokenText}
+     * (if present) and then terminate the call. {@code reason} is GOODBYE /
+     * UNCLEAR / SILENCE for logging / analytics. */
+    void onHangup(String conversationId, String replyToMessageId, String spokenText, String reason);
 
     /**
      * Final frame from ai-conversation-service after we send {@code END}.

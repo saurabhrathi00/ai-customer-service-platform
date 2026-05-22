@@ -1,0 +1,9 @@
+target/
+logs/
+secrets/
+*.iml
+.idea/
+.DS_Store
+HELP.md
+README.md
+CLAUDE.md

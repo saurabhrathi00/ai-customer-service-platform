@@ -10,8 +10,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.util.List;
+
 @Component
 public class KnowledgeServiceClient {
+
+    private static final String AUDIENCE = "knowledge-service";
+    private static final List<String> SCOPES = List.of("knowledge.internal.read");
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeServiceClient.class);
 
@@ -27,13 +32,16 @@ public class KnowledgeServiceClient {
     public String fetchKnowledgeText(String businessId) {
         try {
             log.info("Fetching knowledge for business={}", businessId);
-            return knowledgeServiceRestClient.get()
-                    .uri("/api/internal/knowledge/{businessId}", businessId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken())
+            RenderedKnowledgeResponse response = knowledgeServiceRestClient.get()
+                    .uri("/api/internal/knowledge/{businessId}/rendered", businessId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .retrieve()
-                    .body(String.class);
+                    .body(RenderedKnowledgeResponse.class);
+            return response != null ? response.text() : null;
         } catch (RestClientException ex) {
             throw new DownstreamServiceException("Failed to call knowledge-service", ex);
         }
     }
+
+    record RenderedKnowledgeResponse(String businessId, String text, Integer completenessScore) {}
 }

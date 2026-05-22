@@ -41,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 public class AiConversationWsClient {
 
     private static final Logger log = LoggerFactory.getLogger(AiConversationWsClient.class);
+    private static final String AUDIENCE = "ai-conversation-service";
+    private static final List<String> SCOPES = List.of("ai.internal.invoke");
 
     private final ServiceConfiguration serviceConfiguration;
     private final ServiceTokenClient serviceTokenClient;
@@ -69,7 +71,7 @@ public class AiConversationWsClient {
         URI uri = URI.create(cfg.getWsBaseUrl().replaceAll("/$", "") + "/" + init.conversationId());
 
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken());
+        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES));
 
         Connection conn = new Connection(init.conversationId(), callbacks);
         try {
@@ -94,6 +96,7 @@ public class AiConversationWsClient {
             String businessId,
             String callId,
             String knowledge,
+            String greeting,
             String customerPhone,
             String language,
             String provider
@@ -109,6 +112,26 @@ public class AiConversationWsClient {
         sendJson(conversationId, body);
     }
 
+    /** Signal ai-conv that the latest STT segment was below the confidence
+     *  threshold. ai-conv responds with a canned "please repeat" reply
+     *  (no LLM round-trip). */
+    public void sendUnclearMessage(String conversationId, String messageId) {
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", WsMessageType.UNCLEAR_MESSAGE.name());
+        body.put("conversationId", conversationId);
+        if (messageId != null) body.put("messageId", messageId);
+        sendJson(conversationId, body);
+    }
+
+    /** Notify ai-conv that the caller has been silent for too long. ai-conv
+     *  responds with a re-engagement prompt or, after a few repeats, HANGUP. */
+    public void sendSilencePrompt(String conversationId) {
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", WsMessageType.SILENCE_PROMPT.name());
+        body.put("conversationId", conversationId);
+        sendJson(conversationId, body);
+    }
+
     /** Re-send INIT after a KNOWLEDGE_REQUEST (or as the first frame after open). */
     public void sendInit(InitPayload init) {
         ObjectNode body = mapper.createObjectNode();
@@ -117,6 +140,9 @@ public class AiConversationWsClient {
         body.put("businessId", init.businessId());
         if (init.callId() != null) body.put("callId", init.callId());
         body.put("knowledge", init.knowledge() == null ? "" : init.knowledge());
+        if (init.greeting() != null && !init.greeting().isBlank()) {
+            body.put("greeting", init.greeting());
+        }
 
         ObjectNode metadata = body.putObject("metadata");
         if (init.customerPhone() != null) metadata.put("customerPhone", init.customerPhone());
@@ -213,10 +239,34 @@ public class AiConversationWsClient {
                             conversationId,
                             node.path("replyToMessageId").asText(null),
                             node.path("text").asText(""));
-                    case KNOWLEDGE_REQUEST -> callbacks.onKnowledgeRequest(conversationId);
-                    case CALLBACK_NEEDED -> callbacks.onCallbackNeeded(
+                    case RESPONSE_DELTA -> callbacks.onResponseDelta(
                             conversationId,
-                            node.path("replyToMessageId").asText(null));
+                            node.path("replyToMessageId").asText(null),
+                            node.path("text").asText(""));
+                    case RESPONSE_DONE -> callbacks.onResponseDone(
+                            conversationId,
+                            node.path("replyToMessageId").asText(null),
+                            node.path("finishReason").asText(null));
+                    case HANGUP -> {
+                        JsonNode tNode = node.path("text");
+                        String spoken = tNode.isMissingNode() || tNode.isNull()
+                                ? null : tNode.asText(null);
+                        callbacks.onHangup(
+                                conversationId,
+                                node.path("replyToMessageId").asText(null),
+                                spoken,
+                                node.path("reason").asText(null));
+                    }
+                    case KNOWLEDGE_REQUEST -> callbacks.onKnowledgeRequest(conversationId);
+                    case CALLBACK_NEEDED -> {
+                        JsonNode textNode = node.path("text");
+                        String spoken = textNode.isMissingNode() || textNode.isNull()
+                                ? null : textNode.asText(null);
+                        callbacks.onCallbackNeeded(
+                                conversationId,
+                                node.path("replyToMessageId").asText(null),
+                                spoken);
+                    }
                     case HISTORY -> {
                         JsonNode hist = node.path("history");
                         List<Map<String, String>> parsed = hist.isMissingNode() || hist.isNull()

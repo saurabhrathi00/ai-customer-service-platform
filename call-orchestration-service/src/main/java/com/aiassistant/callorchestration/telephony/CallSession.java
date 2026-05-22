@@ -28,6 +28,9 @@ public class CallSession {
 
     private String knowledgeText;
 
+    /** Opening line the bot speaks before the customer's first utterance. */
+    private String greeting;
+
     @Builder.Default
     private List<TranscriptEntry> transcript = new ArrayList<>();
 
@@ -52,9 +55,23 @@ public class CallSession {
     @Builder.Default
     private AtomicBoolean finalized = new AtomicBoolean(false);
 
+    /**
+     * Guard against running call-end teardown twice when the provider fires
+     * both a {@code stop} event and a WS {@code afterConnectionClosed}
+     * (typical when the customer hangs up).
+     */
+    @Builder.Default
+    private AtomicBoolean ended = new AtomicBoolean(false);
+
     /** Provider-specific scratchpad (e.g. Twilio streamSid for outbound frames). */
     @Builder.Default
     private Map<String, Object> providerAttributes = new ConcurrentHashMap<>();
+
+    /** Epoch-ms when the latest customer utterance was sent to ai-conv;
+     *  used to measure LLM round-trip and end-to-end perceived latency. */
+    @Builder.Default
+    private java.util.concurrent.atomic.AtomicLong lastUtteranceSentAtMs =
+            new java.util.concurrent.atomic.AtomicLong(0);
 
     @Data
     @Builder
