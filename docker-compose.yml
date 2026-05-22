@@ -11,9 +11,14 @@
 # Each is mounted read-only into the container at /etc/secrets/secrets.properties.
 # Non-sensitive configs are baked into each image at /app/configs/.
 #
-# Inter-service URLs are overridden via environment variables (Spring relaxed
-# binding). The values baked into configs/service.properties default to
-# localhost for local dev; in compose they resolve to container hostnames.
+# Public-facing host environment (or .env file next to this compose file):
+#   PUBLIC_HOST=my-domain.in
+#   ACME_EMAIL=ops@my-domain.in
+#   CONFIGS_CALLORCHESTRATION_WSBASEURL=wss://my-domain.in/call-orchestration-service
+#
+# Only Caddy publishes :80/:443 to the public IP. App service ports are
+# bound to 127.0.0.1 so they remain reachable for local debugging on the
+# host but are NOT exposed to the public internet.
 
 name: ai-customer-service
 
@@ -21,7 +26,40 @@ networks:
   backend:
     driver: bridge
 
+volumes:
+  caddy_data:       # persistent Let's Encrypt certs + ACME state
+  caddy_config:
+
 services:
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST (e.g. my-domain.in)}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL for Let's Encrypt}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy
+      knowledge-service:
+        condition: service_healthy
+      incoming-call-service:
+        condition: service_healthy
+      call-orchestration-service:
+        condition: service_healthy
 
   auth-service:
     build:
@@ -30,7 +68,7 @@ services:
     container_name: auth-service
     restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     volumes:
       - /etc/secrets/auth-service/secrets.properties:/etc/secrets/secrets.properties:ro
     networks:
@@ -43,7 +81,7 @@ services:
     container_name: user-business-service
     restart: unless-stopped
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     volumes:
       - /etc/secrets/user-business-service/secrets.properties:/etc/secrets/secrets.properties:ro
     networks:
@@ -59,7 +97,7 @@ services:
     container_name: knowledge-service
     restart: unless-stopped
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
@@ -79,8 +117,10 @@ services:
     image: ai-customer-service/ai-conversation-service:latest
     container_name: ai-conversation-service
     restart: unless-stopped
+    # No public exposure: only call-orchestration-service talks to this,
+    # over the internal backend network. Bind to loopback for host debug only.
     ports:
-      - "8087:8087"
+      - "127.0.0.1:8087:8087"
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
     volumes:
@@ -98,7 +138,7 @@ services:
     container_name: call-orchestration-service
     restart: unless-stopped
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
@@ -126,7 +166,7 @@ services:
     container_name: incoming-call-service
     restart: unless-stopped
     ports:
-      - "8085:8085"
+      - "127.0.0.1:8085:8085"
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service

@@ -1,0 +1,51 @@
+# Public reverse proxy for the AI Customer Service Platform.
+#
+# Caddy terminates TLS (auto Let's Encrypt) for ${PUBLIC_HOST} and routes
+# each backend service by its context-path prefix. WebSocket upgrades are
+# handled automatically by reverse_proxy — no extra config needed.
+#
+# Set PUBLIC_HOST and ACME_EMAIL in the host environment (or a .env file
+# next to docker-compose.yml). Example:
+#   PUBLIC_HOST=my-domain.in
+#   ACME_EMAIL=ops@my-domain.in
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	# Block requests that don't match any service prefix
+	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/*
+	respond @unknown "Not Found" 404
+
+	# Each service already sets server.servlet.context-path matching its prefix,
+	# so we forward requests as-is (no path rewrite needed).
+
+	route /auth-service/* {
+		reverse_proxy auth-service:8081
+	}
+
+	route /user-business-service/* {
+		reverse_proxy user-business-service:8082
+	}
+
+	route /knowledge-service/* {
+		reverse_proxy knowledge-service:8083
+	}
+
+	# Twilio voice webhook lands here over HTTPS.
+	route /incoming-call-service/* {
+		reverse_proxy incoming-call-service:8085
+	}
+
+	# Twilio Media Stream WebSocket lands here over WSS.
+	# Caddy's reverse_proxy handles the Upgrade handshake transparently.
+	route /call-orchestration-service/* {
+		reverse_proxy call-orchestration-service:8086
+	}
+
+	# ai-conversation-service is intentionally NOT exposed publicly.
+	# Only call-orchestration-service talks to it, over the internal network.
+}
