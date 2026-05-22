@@ -11,9 +11,6 @@ public enum WsMessageType {
     /** STT confidence below threshold; ai-conv responds with a "please repeat"
      *  message instead of running an LLM turn. */
     UNCLEAR_MESSAGE,
-    /** Caller has been silent for too long; ai-conv replies with a prompt to
-     *  re-engage, escalating to {@link #HANGUP} after repeats. */
-    SILENCE_PROMPT,
     END,
 
     // Inbound (ai-conversation → this service)

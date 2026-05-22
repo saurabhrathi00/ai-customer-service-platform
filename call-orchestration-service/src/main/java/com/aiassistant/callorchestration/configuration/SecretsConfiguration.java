@@ -14,6 +14,7 @@ public class SecretsConfiguration {
     private AuthService authService;
     private Twilio twilio;
     private ElevenLabs elevenlabs;
+    private Deepgram deepgram;
 
     @Data
     public static class Jwt {
@@ -43,6 +44,11 @@ public class SecretsConfiguration {
 
     @Data
     public static class ElevenLabs {
+        private String key;
+    }
+
+    @Data
+    public static class Deepgram {
         private String key;
     }
 }

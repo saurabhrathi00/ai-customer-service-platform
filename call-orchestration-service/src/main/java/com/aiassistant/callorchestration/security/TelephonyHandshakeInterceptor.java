@@ -42,10 +42,8 @@ public class TelephonyHandshakeInterceptor implements HandshakeInterceptor {
                                    @NonNull ServerHttpResponse response,
                                    @NonNull WebSocketHandler wsHandler,
                                    @NonNull Map<String, Object> attributes) {
-        log.info("=== WS HANDSHAKE START ===");
-        log.info("WS handshake incoming: method={} uri={}", request.getMethod(), request.getURI());
-        log.info("WS handshake remoteAddress={}", request.getRemoteAddress());
-        log.info("WS handshake headers: {}", request.getHeaders());
+        log.debug("WS handshake incoming: method={} uri={} headers={}",
+                request.getMethod(), request.getURI(), request.getHeaders());
 
         String path = request.getURI().getPath();
         Matcher m = WS_PATH.matcher(path);
@@ -56,7 +54,6 @@ public class TelephonyHandshakeInterceptor implements HandshakeInterceptor {
         }
         String provider = m.group(1);
         String callId = m.group(2);
-        log.info("WS handshake parsed provider={} callId={}", provider, callId);
 
         Optional<TelephonyMediaStreamHandler> handler = handlerRegistry.find(provider);
         if (handler.isEmpty()) {
@@ -64,7 +61,6 @@ public class TelephonyHandshakeInterceptor implements HandshakeInterceptor {
             response.setStatusCode(HttpStatus.NOT_FOUND);
             return false;
         }
-        log.info("WS handshake handler resolved: {}", handler.get().getClass().getSimpleName());
 
         boolean valid;
         try {
@@ -83,8 +79,7 @@ public class TelephonyHandshakeInterceptor implements HandshakeInterceptor {
 
         attributes.put(ATTR_PROVIDER, provider);
         attributes.put(ATTR_CALL_ID, callId);
-        log.info("WS handshake ACCEPTED [101] provider={} callId={}", provider, callId);
-        log.info("=== WS HANDSHAKE END ===");
+        log.info("WS handshake ACCEPTED provider={} callId={}", provider, callId);
         return true;
     }
 

@@ -12,6 +12,7 @@ import lombok.Value;
 public class StreamHandoff {
     String callId;
     String businessId;
+    String businessName;
     String customerPhone;
     /** Full WebSocket URL the provider should embed in its response. */
     String wsUrl;

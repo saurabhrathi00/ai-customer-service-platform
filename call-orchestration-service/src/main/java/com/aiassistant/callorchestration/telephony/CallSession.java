@@ -21,6 +21,7 @@ public class CallSession {
     private String callId;
     private String conversationId;
     private String businessId;
+    private String businessName;
     private String customerPhone;
     private String language;
     private String provider;

@@ -47,6 +47,7 @@ public class MediaStreamDispatcherHandler extends TextWebSocketHandler {
                 .callId(parts.callId)
                 .conversationId(ULID_GEN.nextULID())
                 .provider(parts.provider)
+                .language("en")
                 .startedAt(Instant.now())
                 .build();
         callSessionRegistry.put(session);

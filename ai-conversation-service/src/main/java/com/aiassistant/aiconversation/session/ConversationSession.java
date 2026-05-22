@@ -44,12 +44,8 @@ public class ConversationSession {
      *  Used to escalate to CALLBACK_NEEDED after N unclear turns in a row. */
     private final AtomicInteger unclearStreak = new AtomicInteger();
 
-    /** Consecutive SILENCE_PROMPT turns — reset by a normal MESSAGE.
-     *  Used to escalate to HANGUP after N prompts go unanswered. */
-    private final AtomicInteger silenceStreak = new AtomicInteger();
-
     /** Customer language, supplied via INIT metadata. Used to pick the right
-     *  canned text for UNCLEAR / SILENCE / greeting paths without an LLM hop. */
+     *  canned text for UNCLEAR / greeting paths without an LLM hop. */
     @Setter private volatile String language;
 
     public ConversationSession(String conversationId, String businessId,
@@ -83,15 +79,6 @@ public class ConversationSession {
 
     public void resetUnclearStreak() {
         unclearStreak.set(0);
-    }
-
-    public int incrementSilenceStreak() {
-        touch();
-        return silenceStreak.incrementAndGet();
-    }
-
-    public void resetSilenceStreak() {
-        silenceStreak.set(0);
     }
 
     public void addUsage(TokenUsage delta) {

@@ -45,23 +45,6 @@ public class ConversationCoordinator {
     private final java.util.concurrent.ConcurrentMap<String, CallEventListener> listeners
             = new java.util.concurrent.ConcurrentHashMap<>();
 
-    // ─── Silence detection ──────────────────────────────────────────────
-    // Polls active CallSessions every {@value #SILENCE_CHECK_INTERVAL_MS}ms;
-    // if the caller has been silent and the bot is not currently speaking,
-    // sends a SILENCE_PROMPT to ai-conv which decides whether to re-engage
-    // or hang up.
-    private static final long SILENCE_THRESHOLD_MS = 4_000;
-    private static final long SILENCE_CHECK_INTERVAL_MS = 1_000;
-
-    private final java.util.concurrent.ScheduledExecutorService silenceScheduler =
-            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "silence-detector");
-                t.setDaemon(true);
-                return t;
-            });
-    private final java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ScheduledFuture<?>>
-            silenceTasks = new java.util.concurrent.ConcurrentHashMap<>();
-
     public interface CallEventListener {
         /** AI replied with a complete customer-facing text — push to TTS. */
         void onAiReply(String callId, String text);
@@ -85,23 +68,18 @@ public class ConversationCoordinator {
         String knowledge = knowledgeServiceClient.fetchKnowledgeText(session.getBusinessId());
         session.setKnowledgeText(knowledge);
 
-        String greeting = buildGreeting(knowledge, session.getLanguage());
+        String greeting = buildGreeting(knowledge, session.getLanguage(), session.getBusinessName());
         session.setGreeting(greeting);
 
         listeners.put(callId, listener);
         wsClient.open(buildInit(session), new InboundDispatcher(callId));
 
         // Initialize silence clock to "now" so we don't fire prompts during
-        // the bot's opening greeting — botSpeaking will be true while the
-        // greeting plays, so the tick will skip naturally.
+        // Silence detection disabled — too noisy / fires during natural pauses.
+        // The sttFinalAtMs attribute is still maintained elsewhere for the
+        // [latency] end2end metric.
         long now = System.currentTimeMillis();
         session.getProviderAttributes().putIfAbsent("sttFinalAtMs", now);
-        session.getProviderAttributes().put("lastSilencePromptAtMs", now);
-        java.util.concurrent.ScheduledFuture<?> sf = silenceScheduler.scheduleAtFixedRate(
-                () -> tickSilence(callId),
-                SILENCE_CHECK_INTERVAL_MS * 2, SILENCE_CHECK_INTERVAL_MS,
-                java.util.concurrent.TimeUnit.MILLISECONDS);
-        silenceTasks.put(callId, sf);
 
         // Bot speaks first — no LLM round-trip on the opening turn. The same
         // greeting is also pre-seeded in ai-conv history via the INIT frame,
@@ -126,11 +104,23 @@ public class ConversationCoordinator {
      * versa). Bilingual is slightly longer but robust without needing a
      * separate language-detection step.
      */
-    private String buildGreeting(String knowledge, String language) {
-        String businessName = extractBusinessName(knowledge);
+    private String buildGreeting(String knowledge, String language, String sessionBusinessName) {
+        // Prefer the name passed in from incoming-call-service via Twilio
+        // custom parameters; only fall back to knowledge-blob parsing if it
+        // wasn't supplied (e.g. older callers, non-Twilio providers).
+        String businessName = (sessionBusinessName != null && !sessionBusinessName.isBlank())
+                ? sessionBusinessName
+                : extractBusinessName(knowledge);
         String lang = language == null ? "" : language.toLowerCase();
         boolean isEnglish = lang.startsWith("en");
         boolean isHindi   = lang.startsWith("hi");
+        if (log.isDebugEnabled()) {
+            String firstLine = knowledge == null ? "<null>"
+                    : knowledge.substring(0, Math.min(80, knowledge.length()))
+                            .replace('\n', ' ');
+            log.debug("[greeting] language=\"{}\" isEnglish={} isHindi={} businessName=\"{}\" knowledgeFirstLine=\"{}\"",
+                    language, isEnglish, isHindi, businessName, firstLine);
+        }
 
         if (isEnglish) {
             return businessName != null
@@ -173,7 +163,10 @@ public class ConversationCoordinator {
      *               so ai-conv can short-circuit to a "please repeat" reply.
      */
     public void onCustomerUtterance(String callId, String text, boolean clear) {
-        if (text == null || text.isBlank()) return;
+        if (text == null || text.isBlank()) {
+            log.info("[stt] empty final dropped callId={} clear={}", callId, clear);
+            return;
+        }
         String messageId = ULID_GEN.nextULID();
         CallSession session = callSessionRegistry.get(callId).orElse(null);
         if (session == null) {
@@ -184,6 +177,9 @@ public class ConversationCoordinator {
                 .speaker("customer").text(text).timestamp(Instant.now()).build());
         session.getLastUtteranceSentAtMs().set(System.currentTimeMillis());
         if (clear) {
+            long t = System.currentTimeMillis();
+            session.getProviderAttributes().put("msgSentAtMs", t);
+            log.info("[latency] callId={} stage=msg-sent chars={}", callId, text.length());
             wsClient.sendUserMessage(session.getConversationId(), messageId, text);
         } else {
             log.info("[unclear] callId={} conversationId={} sttText=\"{}\" — sending UNCLEAR_MESSAGE",
@@ -193,8 +189,6 @@ public class ConversationCoordinator {
     }
 
     public void onCallEnd(String callId) {
-        java.util.concurrent.ScheduledFuture<?> sf = silenceTasks.remove(callId);
-        if (sf != null) sf.cancel(false);
         // listeners.remove() is the idempotency guard — survives the CallSession
         // being removed from the registry by the WS-close path. First caller
         // gets the listener back; the second sees null and exits.
@@ -208,30 +202,11 @@ public class ConversationCoordinator {
         wsClient.close(conversationId);
     }
 
-    /** Scheduled tick — fires SILENCE_PROMPT to ai-conv when the caller has
-     *  been quiet long enough and the bot isn't currently speaking. */
-    private void tickSilence(String callId) {
-        try {
-            CallSession session = callSessionRegistry.get(callId).orElse(null);
-            if (session == null) return;
-            Map<String, Object> attrs = session.getProviderAttributes();
-            if (Boolean.TRUE.equals(attrs.get("botSpeaking"))) return;
-
-            long now = System.currentTimeMillis();
-            long lastStt  = ((Number) attrs.getOrDefault("sttFinalAtMs", 0L)).longValue();
-            long lastPrompt = ((Number) attrs.getOrDefault("lastSilencePromptAtMs", 0L)).longValue();
-            long lastActivity = Math.max(lastStt, lastPrompt);
-
-            if (now - lastActivity < SILENCE_THRESHOLD_MS) return;
-
-            attrs.put("lastSilencePromptAtMs", now);
-            log.info("[silence] callId={} conversationId={} silentMs={} — sending SILENCE_PROMPT",
-                    callId, session.getConversationId(), now - lastActivity);
-            wsClient.sendSilencePrompt(session.getConversationId());
-        } catch (Exception e) {
-            log.warn("Silence tick failed callId={}: {}", callId, e.getMessage());
-        }
-    }
+    // Silence detection was intentionally removed — telephony concern, not
+    // LLM concern. When re-adding, drive the streak + canned "are you still
+    // there?" entirely inside call-orchestration via a ScheduledExecutorService
+    // that dispatches `onAiReply` / `onHangup` to the listener directly. See
+    // git history for the previous implementation.
 
     private void dispatchToListener(String callId, Consumer<CallEventListener> action) {
         CallEventListener l = listeners.get(callId);
@@ -267,9 +242,17 @@ public class ConversationCoordinator {
 
         InboundDispatcher(String callId) { this.callId = callId; }
 
+        private void logResponseLatency(CallSession session, String stage, int chars) {
+            if (session == null) return;
+            Object t = session.getProviderAttributes().get("msgSentAtMs");
+            long delta = t instanceof Long s ? System.currentTimeMillis() - s : -1;
+            log.info("[latency] callId={} stage={} ms={} chars={}", callId, stage, delta, chars);
+        }
+
         @Override
         public void onResponse(String conversationId, String replyToMessageId, String text) {
             CallSession session = callSessionRegistry.get(callId).orElse(null);
+            logResponseLatency(session, "response-final", text == null ? 0 : text.length());
             if (session != null) {
                 session.getTranscript().add(CallSession.TranscriptEntry.builder()
                         .speaker("assistant").text(text).timestamp(Instant.now()).build());
@@ -280,6 +263,10 @@ public class ConversationCoordinator {
         @Override
         public void onResponseDelta(String conversationId, String replyToMessageId, String deltaText) {
             if (deltaText == null || deltaText.isEmpty()) return;
+            if (streamingAcc.length() == 0) {
+                CallSession session = callSessionRegistry.get(callId).orElse(null);
+                logResponseLatency(session, "response-first-delta", deltaText.length());
+            }
             streamingAcc.append(deltaText);
             dispatch(l -> l.onAiReplyChunk(callId, deltaText));
         }
@@ -288,8 +275,9 @@ public class ConversationCoordinator {
         public void onResponseDone(String conversationId, String replyToMessageId, String finishReason) {
             String full = streamingAcc.toString();
             streamingAcc.setLength(0);
+            CallSession session = callSessionRegistry.get(callId).orElse(null);
+            logResponseLatency(session, "response-done", full.length());
             if (!full.isBlank()) {
-                CallSession session = callSessionRegistry.get(callId).orElse(null);
                 if (session != null) {
                     session.getTranscript().add(CallSession.TranscriptEntry.builder()
                             .speaker("assistant").text(full).timestamp(Instant.now()).build());

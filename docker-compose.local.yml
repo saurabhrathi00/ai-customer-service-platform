@@ -39,7 +39,9 @@ services:
     container_name: caddy-local
     restart: unless-stopped
     ports:
-      - "80:80"
+      # Host :8080 → container :80. ngrok forwards to host :8080 so this
+      # matches the existing tunnel without needing sudo for :80 on macOS.
+      - "8080:80"
     volumes:
       - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
     networks:

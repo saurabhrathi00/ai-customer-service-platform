@@ -123,15 +123,6 @@ public class AiConversationWsClient {
         sendJson(conversationId, body);
     }
 
-    /** Notify ai-conv that the caller has been silent for too long. ai-conv
-     *  responds with a re-engagement prompt or, after a few repeats, HANGUP. */
-    public void sendSilencePrompt(String conversationId) {
-        ObjectNode body = mapper.createObjectNode();
-        body.put("type", WsMessageType.SILENCE_PROMPT.name());
-        body.put("conversationId", conversationId);
-        sendJson(conversationId, body);
-    }
-
     /** Re-send INIT after a KNOWLEDGE_REQUEST (or as the first frame after open). */
     public void sendInit(InitPayload init) {
         ObjectNode body = mapper.createObjectNode();

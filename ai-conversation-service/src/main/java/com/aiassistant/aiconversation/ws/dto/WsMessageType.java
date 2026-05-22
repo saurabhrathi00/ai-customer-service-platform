@@ -9,10 +9,6 @@ public enum WsMessageType {
      *  in the caller's language. After N consecutive UNCLEAR_MESSAGEs,
      *  escalate to {@link #CALLBACK_NEEDED}. */
     UNCLEAR_MESSAGE,
-    /** No customer audio received for an extended period. ai-conv replies
-     *  with an "are you still there?" prompt, escalating to {@link #HANGUP}
-     *  after a few repeats. */
-    SILENCE_PROMPT,
     END,
 
     // Outbound (ai-conversation → call-orchestration)

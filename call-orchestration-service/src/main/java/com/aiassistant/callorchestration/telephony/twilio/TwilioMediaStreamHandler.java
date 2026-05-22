@@ -47,6 +47,14 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
     private final ConversationCoordinator conversationCoordinator;
     @Qualifier("ttsExecutor")
     private final Executor ttsExecutor;
+    /** Used to delay the botSpeaking=false flip until audio actually finishes
+     *  playing on the caller's phone. Daemon so it doesn't block JVM exit. */
+    private final java.util.concurrent.ScheduledExecutorService playbackEndScheduler =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "twilio-playback-end-scheduler");
+                t.setDaemon(true);
+                return t;
+            });
 
     @Override
     public String providerId() {
@@ -153,6 +161,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     if (customParams.containsKey("businessId")) {
                         session.setBusinessId(customParams.get("businessId"));
                     }
+                    if (customParams.containsKey("businessName")) {
+                        session.setBusinessName(customParams.get("businessName"));
+                    }
                     if (customParams.containsKey("customerPhone")) {
                         session.setCustomerPhone(customParams.get("customerPhone"));
                     }
@@ -180,6 +191,57 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                 AudioCodec.MULAW,
                                 sampleRate,
                                 event2 -> {
+                                    // Bump activity timestamp on ANY non-empty transcript
+                                    // (partial or final) so the silence detector doesn't
+                                    // fire mid-utterance.
+                                    String t = event2.text();
+                                    var sttCfg2 = serviceConfiguration.getStt();
+                                    Double bargeThreshold = sttCfg2 == null ? null : sttCfg2.getConfidenceThreshold();
+                                    if (t != null && !t.isBlank()) {
+                                        session.getProviderAttributes().put(
+                                                "sttFinalAtMs", System.currentTimeMillis());
+                                        // Barge-in gate. Three guards stack:
+                                        //   (1) final-OR-length: avoid cutting the bot off on
+                                        //       a stray short partial ("uh", a half-word).
+                                        //   (2) confidence floor: when STT reports a confidence
+                                        //       below the threshold, this looks like background
+                                        //       noise / multi-speaker chatter, NOT a real
+                                        //       caller utterance — skip the barge.
+                                        //   (3) the bot must actually be speaking.
+                                        int trimmedLen = t.trim().length();
+                                        int minBargeLen = sttCfg2 == null ? 12 : sttCfg2.getBargeInMinLengthChars();
+                                        boolean longEnough = event2.isFinal() || trimmedLen >= minBargeLen;
+                                        boolean confidentEnough = event2.confidence() == null
+                                                || bargeThreshold == null
+                                                || event2.confidence() >= bargeThreshold;
+                                        boolean enoughToBarge = longEnough && confidentEnough;
+                                        if (enoughToBarge
+                                                && Boolean.TRUE.equals(session.getProviderAttributes().get("botSpeaking"))) {
+                                            java.util.concurrent.atomic.AtomicBoolean barged =
+                                                    (java.util.concurrent.atomic.AtomicBoolean) session.getProviderAttributes()
+                                                            .computeIfAbsent("barged", k -> new java.util.concurrent.atomic.AtomicBoolean());
+                                            if (barged.compareAndSet(false, true)) {
+                                                log.info("[barge-in] callId={} user spoke while bot speaking — clearing Twilio buffer",
+                                                        session.getCallId());
+                                                WebSocketSession bargeWs = (WebSocketSession) session.getProviderAttributes().get("ws");
+                                                String bargeSid = (String) session.getProviderAttributes().get("streamSid");
+                                                if (bargeWs != null && bargeWs.isOpen() && bargeSid != null) {
+                                                    try {
+                                                        ObjectNode clearFrame = objectMapper.createObjectNode();
+                                                        clearFrame.put("event", "clear");
+                                                        clearFrame.put("streamSid", bargeSid);
+                                                        synchronized (bargeWs) {
+                                                            bargeWs.sendMessage(new TextMessage(objectMapper.writeValueAsString(clearFrame)));
+                                                        }
+                                                    } catch (Exception ex) {
+                                                        log.warn("[barge-in] send clear failed callId={}: {}",
+                                                                session.getCallId(), ex.getMessage());
+                                                    }
+                                                }
+                                                session.getProviderAttributes().put("botSpeaking", Boolean.FALSE);
+                                            }
+                                        }
+                                    }
                                     if (event2.isFinal()) {
                                         // Confidence gate — sub-threshold transcripts get sent as
                                         // an UNCLEAR_MESSAGE frame; ai-conv short-circuits to a
@@ -194,6 +256,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                         }
                                         long sttFinalAt = System.currentTimeMillis();
                                         session.getProviderAttributes().put("sttFinalAtMs", sttFinalAt);
+                                        // Dedicated anchor for the user-to-speech metric, won't get
+                                        // bumped by interim partials or by the bot-turn-end scheduler.
+                                        session.getProviderAttributes().put("userStoppedAtMs", sttFinalAt);
                                         session.getProviderAttributes().remove("e2eLogged");
                                         session.getTranscript().add(CallSession.TranscriptEntry.builder()
                                                 .speaker("CUSTOMER")
@@ -230,8 +295,18 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     onAudioFrame(session, audio, AudioCodec.MULAW);
                 }
 
-                case "mark" -> log.debug("[twilio] <- MARK callId={} name={}",
-                        session.getCallId(), root.path("mark").path("name").asText());
+                case "mark" -> {
+                    String markName = root.path("mark").path("name").asText();
+                    log.debug("[twilio] <- MARK callId={} name={}", session.getCallId(), markName);
+                    // When Twilio echoes back the "ai-reply-end" mark we sent
+                    // at the tail of the TTS stream, audio playback has actually
+                    // finished on the caller's phone. Reset the silence clock
+                    // NOW so we don't count playback time as user silence.
+                    if ("ai-reply-end".equals(markName)) {
+                        session.getProviderAttributes().put(
+                                "sttFinalAtMs", System.currentTimeMillis());
+                    }
+                }
 
                 case "stop" -> {
                     log.info("[twilio] call stopped callId={}", session.getCallId());
@@ -360,9 +435,24 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             java.util.concurrent.atomic.AtomicInteger inflight =
                     (java.util.concurrent.atomic.AtomicInteger) session.getProviderAttributes()
                             .computeIfAbsent("ttsInflight", k -> new java.util.concurrent.atomic.AtomicInteger());
+            // Fresh AI turn (no chunks in flight yet) → clear stale flags so this
+            // reply can play out. Bargein and the audio-byte counter both reset.
+            if (inflight.get() == 0) {
+                java.util.concurrent.atomic.AtomicBoolean barged =
+                        (java.util.concurrent.atomic.AtomicBoolean) session.getProviderAttributes()
+                                .computeIfAbsent("barged", k -> new java.util.concurrent.atomic.AtomicBoolean());
+                barged.set(false);
+                java.util.concurrent.atomic.AtomicLong turnBytes =
+                        (java.util.concurrent.atomic.AtomicLong) session.getProviderAttributes()
+                                .computeIfAbsent("turnAudioBytes", k -> new java.util.concurrent.atomic.AtomicLong());
+                turnBytes.set(0);
+            }
             inflight.incrementAndGet();
             session.getProviderAttributes().put("botSpeaking", Boolean.TRUE);
             ttsExecutor.execute(() -> {
+                java.util.concurrent.atomic.AtomicBoolean barged =
+                        (java.util.concurrent.atomic.AtomicBoolean) session.getProviderAttributes()
+                                .get("barged");
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     long ttsStart = System.currentTimeMillis();
@@ -370,48 +460,117 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
+                                // Drop further audio if user has barged in.
+                                if (barged != null && barged.get()) return;
                                 if (firstChunkAt[0] < 0) {
                                     firstChunkAt[0] = System.currentTimeMillis();
                                     log.info("[latency] callId={} stage=tts-first-byte ms={}",
                                             callId, firstChunkAt[0] - ttsStart);
-                                    // end2end logged ONCE per customer-turn — on the first
-                                    // audio chunk of the first sentence after STT final.
+                                    // user-to-speech: time from "user stopped speaking" (STT final)
+                                    // to "bot's first audio chunk ready". Logged ONCE per customer
+                                    // turn — on the first audio chunk of the first sentence after
+                                    // STT final. Anchored on userStoppedAtMs which is NOT bumped
+                                    // by interim STT partials, so this is a true round-trip metric.
                                     if (session.getProviderAttributes().putIfAbsent("e2eLogged", true) == null) {
-                                        Object sttFinalAt = session.getProviderAttributes().get("sttFinalAtMs");
-                                        if (sttFinalAt instanceof Long s && s > 0) {
-                                            log.info("[latency] callId={} stage=end2end ms={}",
+                                        Object userStoppedAt = session.getProviderAttributes().get("userStoppedAtMs");
+                                        if (userStoppedAt instanceof Long s && s > 0) {
+                                            log.info("[latency] callId={} stage=user-to-speech ms={}",
                                                     callId, firstChunkAt[0] - s);
                                         }
                                     }
+                                }
+                                // Track audio bytes for THIS TTS turn so we can
+                                // compute the exact playback duration on Twilio's
+                                // side (mu-law @ 8000 samples/sec → 8 bytes/ms).
+                                Object tb = session.getProviderAttributes().get("turnAudioBytes");
+                                if (tb instanceof java.util.concurrent.atomic.AtomicLong c) {
+                                    c.addAndGet(chunk.length);
                                 }
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
                     log.info("[latency] callId={} stage=tts-total ms={} chars={}",
                             callId, System.currentTimeMillis() - ttsStart, text.length());
-                    if (isFinal) sendMark(ws, streamSid, "ai-reply-end");
+                    if (isFinal && (barged == null || !barged.get())) {
+                        sendMark(ws, streamSid, "ai-reply-end");
+                    }
                 } catch (Exception ex) {
                     log.warn("[twilio] TTS/send failed callId={}: {}", callId, ex.getMessage());
                 } finally {
                     if (inflight.decrementAndGet() <= 0) {
-                        session.getProviderAttributes().put("botSpeaking", Boolean.FALSE);
+                        // All TTS chunks for this turn have been sent to Twilio,
+                        // but Twilio is still playing audio on the caller's phone.
+                        // Compute the exact playback duration from total bytes sent
+                        // (mu-law @ 8000 samples/sec = 8 bytes/ms). Then schedule
+                        // the botSpeaking=false flip after that delay — the silence
+                        // tick skips while botSpeaking=true, so the counter stays
+                        // paused for the full bot turn (send + playback).
+                        Object tb = session.getProviderAttributes().get("turnAudioBytes");
+                        long bytes = (tb instanceof java.util.concurrent.atomic.AtomicLong c) ? c.get() : 0L;
+                        long minPlayback = serviceConfiguration.getTelephony() == null
+                                ? 200L : serviceConfiguration.getTelephony().getMinPlaybackMs();
+                        long playbackMs = Math.max(minPlayback, bytes / AudioCodec.MULAW.bytesPerMs());
+                        log.debug("[bot-turn-end] callId={} bytes={} playbackMs={} — pausing silence until playback completes",
+                                callId, bytes, playbackMs);
+                        playbackEndScheduler.schedule(() -> {
+                            // Skip if another reply has already started.
+                            if (inflight.get() != 0) return;
+                            session.getProviderAttributes().put("botSpeaking", Boolean.FALSE);
+                            long now = System.currentTimeMillis();
+                            // MAX so a fresher user STT (e.g. mid-playback bargein)
+                            // isn't clobbered.
+                            Object cur = session.getProviderAttributes().get("sttFinalAtMs");
+                            long prev = cur instanceof Long l ? l : 0L;
+                            session.getProviderAttributes().put(
+                                    "sttFinalAtMs", Math.max(prev, now));
+                            // Full cycle metric: from "user stopped speaking" (STT final)
+                            // to "bot finished speaking, mic is yours again". This is what
+                            // a caller actually feels as the round-trip wait.
+                            Object u = session.getProviderAttributes().get("userStoppedAtMs");
+                            if (u instanceof Long uMs && uMs > 0) {
+                                log.info("[latency] callId={} stage=full-turn ms={}", callId, now - uMs);
+                            }
+                            log.debug("[bot-turn-end] callId={} playback complete", callId);
+                        }, playbackMs, java.util.concurrent.TimeUnit.MILLISECONDS);
                     }
                 }
             });
         }
 
-        /** Find the index just past the last sentence-ending punctuation in the buffer. */
+        /** Find the index just past the last clause/sentence boundary in the
+         *  buffer. We flush at commas, semicolons, colons (in addition to
+         *  terminal punctuation) AND at common conjunctions ("and", "but",
+         *  "so", "or", "because") so each clause hits TTS as soon as it's
+         *  ready — first audio fires within ~250 ms of stt-final instead of
+         *  waiting for a full sentence. The conjunction itself stays with
+         *  the next clause so the spoken cadence is natural. */
         private int lastSentenceBoundary(CharSequence s) {
             int n = s.length();
+            int best = -1;
+            // 1) Punctuation boundary — closest one to the end wins.
             for (int i = n - 1; i >= 0; i--) {
                 char c = s.charAt(i);
-                if (c == '.' || c == '!' || c == '?' || c == '।' || c == '\n') {
+                if (c == '.' || c == '!' || c == '?' || c == '।' || c == '\n'
+                        || c == ',' || c == ';' || c == ':') {
                     // Require a following whitespace/newline (or end) to avoid splitting "Rs.500".
                     if (i == n - 1 || Character.isWhitespace(s.charAt(i + 1))) {
-                        return i + 1;
+                        best = i + 1;
+                        break;
                     }
                 }
             }
-            return -1;
+            // 2) Conjunction boundary — flush BEFORE the conjunction so the
+            //    " and ..." / " but ..." stays in the buffer for the next chunk.
+            String[] conjunctions = { " and ", " but ", " so ", " or ", " because " };
+            String str = s.toString();
+            for (String w : conjunctions) {
+                int idx = str.lastIndexOf(w);
+                // Only honour conjunctions that come AFTER at least 6 chars of
+                // text — avoids flushing a tiny "I or" type fragment.
+                if (idx > 5 && idx > best) {
+                    best = idx;
+                }
+            }
+            return best;
         }
 
         private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {
@@ -456,17 +615,30 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             // Run TTS + Twilio terminate inline on the same executor thread so
             // the farewell finishes playing before the call drops.
             ttsExecutor.execute(() -> {
+                long bytesSent = 0L;
                 try {
                     if (spokenText != null && !spokenText.isBlank()
                             && streamSid != null && ws != null && ws.isOpen()) {
                         Base64.Encoder b64 = Base64.getEncoder();
+                        long[] bytes = {0L};
                         textToSpeechProvider.synthesizeStream(spokenText,
                                 VoiceProfile.builder().language(session.getLanguage()).build(),
-                                chunk -> sendMediaChunk(ws, streamSid, b64, chunk));
+                                chunk -> {
+                                    bytes[0] += chunk.length;
+                                    sendMediaChunk(ws, streamSid, b64, chunk);
+                                });
+                        bytesSent = bytes[0];
                         sendMark(ws, streamSid, "ai-hangup-end");
-                        // Small grace so the last audio frames buffered on Twilio's
-                        // side actually reach the caller before we drop the call.
-                        Thread.sleep(800);
+                        // Sleep for the full playback duration + configurable
+                        // tail so the entire farewell sentence finishes in the
+                        // caller's ear before the call drops. Tail covers Twilio
+                        // buffering and carrier delivery delay.
+                        long hangupTail = serviceConfiguration.getTelephony() == null
+                                ? 500L : serviceConfiguration.getTelephony().getHangupTailMs();
+                        long playbackMs = bytesSent / AudioCodec.MULAW.bytesPerMs() + hangupTail;
+                        log.info("[twilio] hangup TTS bytes={} playbackMs={} callId={}",
+                                bytesSent, playbackMs, callId);
+                        Thread.sleep(playbackMs);
                     }
                 } catch (Exception ex) {
                     log.warn("[twilio] hangup TTS failed callId={}: {}", callId, ex.getMessage());

@@ -81,7 +81,6 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
             case INIT -> handleInit(ws, frame);
             case MESSAGE -> handleMessage(ws, frame);
             case UNCLEAR_MESSAGE -> handleUnclearMessage(ws, frame);
-            case SILENCE_PROMPT -> handleSilencePrompt(ws, frame);
             case END -> ws.close(CloseStatus.NORMAL);
             default -> sendError(ws, frame.getConversationId(),
                     "BAD_FRAME", "Unsupported inbound type: " + frame.getType());
@@ -179,74 +178,6 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .build());
     }
 
-    // ─── SILENCE_PROMPT ──────────────────────────────────────────────────
-
-    private static final int MAX_SILENCE_PROMPTS = 3;
-
-    private void handleSilencePrompt(WebSocketSession ws, InboundFrame frame) throws IOException {
-        String conversationId = resolveConversationId(ws, frame);
-        if (conversationId == null) {
-            sendError(ws, null, "BAD_FRAME", "SILENCE_PROMPT missing conversationId");
-            return;
-        }
-        ConversationSession session = sessionRegistry.get(conversationId);
-        int count = session == null ? 1 : session.incrementSilenceStreak();
-        String lang = session == null ? null : session.getLanguage();
-
-        if (count >= MAX_SILENCE_PROMPTS) {
-            if (session != null) session.resetSilenceStreak();
-            String farewell = silenceFarewell(lang);
-            log.info("[silence] conversationId={} count={} action=HANGUP reply=\"{}\"",
-                    conversationId, count, farewell);
-            send(ws, OutboundFrames.Hangup.builder()
-                    .conversationId(conversationId)
-                    .replyToMessageId(frame.getMessageId())
-                    .text(farewell)
-                    .reason("SILENCE")
-                    .build());
-            return;
-        }
-        String prompt = silencePrompt(lang, count);
-        log.info("[silence] conversationId={} count={} action=PROMPT reply=\"{}\"",
-                conversationId, count, prompt);
-        send(ws, OutboundFrames.Response.builder()
-                .conversationId(conversationId)
-                .replyToMessageId(frame.getMessageId())
-                .text(prompt)
-                .build());
-    }
-
-    private static String silencePrompt(String language, int count) {
-        boolean english = language != null && language.toLowerCase().startsWith("en");
-        boolean hindi   = language != null && language.toLowerCase().startsWith("hi");
-        if (english) {
-            return count == 1
-                    ? "Hello, are you still there? How can I help you?"
-                    : "Hello? Can you hear me?";
-        }
-        if (hindi) {
-            return count == 1
-                    ? "Hello, kya aap line par hain? Main aapki kaise madad kar sakti hoon?"
-                    : "Hello, aapki awaaz aa rahi hai?";
-        }
-        // Unknown — bilingual.
-        return count == 1
-                ? "Hello, kya aap line par hain? Are you still there?"
-                : "Hello, can you hear me? Aapki awaaz aa rahi hai?";
-    }
-
-    private static String silenceFarewell(String language) {
-        boolean english = language != null && language.toLowerCase().startsWith("en");
-        boolean hindi   = language != null && language.toLowerCase().startsWith("hi");
-        if (english) {
-            return "I'm not receiving any response from your side, so I'll disconnect the call. Thank you for calling.";
-        }
-        if (hindi) {
-            return "Aapki taraf se koi awaaz nahi aa rahi, isliye main call disconnect kar rahi hoon. Dhanyavaad.";
-        }
-        return "Aapki taraf se koi awaaz nahi aa rahi, isliye main call disconnect kar rahi hoon. Dhanyavaad.";
-    }
-
     // ─── MESSAGE ─────────────────────────────────────────────────────────
 
     private void handleMessage(WebSocketSession ws, InboundFrame frame) throws IOException {
@@ -315,9 +246,11 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
     private void processTurn(WebSocketSession ws, ConversationSession session,
                              String replyToMessageId, String userText) throws IOException {
+        long turnStart = System.currentTimeMillis();
+        log.info("[latency] conversationId={} stage=turn-start chars={}",
+                session.getConversationId(), userText == null ? 0 : userText.length());
         session.appendUser(userText);
         session.resetUnclearStreak();
-        session.resetSilenceStreak();
 
         ServiceConfiguration.Llm cfg = serviceConfiguration.getLlm();
         LlmRequest req = LlmRequest.builder()
@@ -327,6 +260,10 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .temperature(cfg.getTemperature())
                 .cacheSystemPrompt(cfg.isPromptCacheEnabled())
                 .build();
+        long llmStart = System.currentTimeMillis();
+        log.info("[latency] conversationId={} stage=prompt-built ms={} messages={}",
+                session.getConversationId(), llmStart - turnStart,
+                req.getMessages() == null ? 0 : req.getMessages().size());
 
         // Streaming LLM call. We buffer the first ~20 chars of text so we can
         // detect the {@code CALLBACK_NEEDED} sentinel before forwarding any
@@ -334,6 +271,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // know it isn't a callback, all subsequent text is forwarded as
         // RESPONSE_DELTA frames as soon as it arrives.
         TurnState state = new TurnState(replyToMessageId);
+        long[] firstDeltaAt = {-1};
 
         try {
             reactor.core.publisher.Flux<LlmDelta> stream = reactor.core.publisher.Flux
@@ -341,7 +279,18 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
             // Blocking subscribe — this handler thread waits on the stream and
             // pushes WS frames inline. Per-turn ordering is preserved.
-            stream.toIterable().forEach(delta -> emitDelta(ws, session, state, delta));
+            stream.toIterable().forEach(delta -> {
+                if (firstDeltaAt[0] < 0) {
+                    firstDeltaAt[0] = System.currentTimeMillis();
+                    log.info("[latency] conversationId={} stage=llm-first-token ms={}",
+                            session.getConversationId(), firstDeltaAt[0] - llmStart);
+                }
+                emitDelta(ws, session, state, delta);
+            });
+            log.info("[latency] conversationId={} stage=llm-total ms={} firstTokenMs={}",
+                    session.getConversationId(),
+                    System.currentTimeMillis() - llmStart,
+                    firstDeltaAt[0] < 0 ? -1 : firstDeltaAt[0] - llmStart);
 
         } catch (LlmException e) {
             log.warn("LLM stream failed conversationId={} code={} msg={}",

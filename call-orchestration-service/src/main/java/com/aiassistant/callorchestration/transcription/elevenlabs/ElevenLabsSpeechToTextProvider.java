@@ -106,9 +106,19 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
             q.append("&commit_strategy=").append(el.getSttCommitStrategy());
         }
         q.append("&no_verbatim=").append(el.isSttNoVerbatim());
+        // NOTE: vad_silence_threshold_secs is NOT supported on the WebSocket
+        // realtime endpoint. With commit_strategy=manual the server never
+        // commits on its own — we send the commit message ourselves after a
+        // configurable silence window (see ManualCommitState below).
 
         URI uri = URI.create(endpoint + q);
-        Listener listener = new Listener(callId, onTranscript, mapper);
+
+        long silenceMs = el.getSttManualCommitSilenceMs() != null
+                ? el.getSttManualCommitSilenceMs() : 400L;
+        boolean manual = "manual".equalsIgnoreCase(el.getSttCommitStrategy());
+        ManualCommitState state = new ManualCommitState(silenceMs, manual);
+
+        Listener listener = new Listener(callId, onTranscript, mapper, state);
 
         WebSocket ws;
         try {
@@ -117,13 +127,27 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                     .connectTimeout(Duration.ofSeconds(10))
                     .buildAsync(uri, listener)
                     .join();
-            log.info("[elevenlabs-stt] WS connected callId={}", callId);
+            log.info("[elevenlabs-stt] WS connected callId={} manualCommit={} silenceMs={}",
+                    callId, manual, silenceMs);
         } catch (Exception ex) {
             log.error("[elevenlabs-stt] WS connect failed callId={}", callId, ex);
             throw new RuntimeException("ElevenLabs STT connect failed", ex);
         }
 
-        return new ElevenLabsSttSession(callId, ws, mapper, sampleRateHz);
+        return new ElevenLabsSttSession(callId, ws, mapper, sampleRateHz, state);
+    }
+
+    /** Shared state for manual-commit silence detection. */
+    static class ManualCommitState {
+        final long silenceMs;
+        final boolean manual;
+        volatile long lastPartialAtMs = 0;
+        final java.util.concurrent.atomic.AtomicBoolean hasUncommittedPartial =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        ManualCommitState(long silenceMs, boolean manual) {
+            this.silenceMs = silenceMs;
+            this.manual = manual;
+        }
     }
 
     /** Per-session handle exposed to the caller. */
@@ -133,22 +157,24 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         private final WebSocket ws;
         private final ObjectMapper mapper;
         private final int sampleRateHz;
+        private final ManualCommitState state;
         // Serialise sends — java.net.http.WebSocket requires the previous send to complete first.
         private final AtomicReference<CompletableFuture<WebSocket>> sendChain =
                 new AtomicReference<>(CompletableFuture.completedFuture(null));
 
-        ElevenLabsSttSession(String callId, WebSocket ws, ObjectMapper mapper, int sampleRateHz) {
+        ElevenLabsSttSession(String callId, WebSocket ws, ObjectMapper mapper,
+                             int sampleRateHz, ManualCommitState state) {
             this.callId = callId;
             this.ws = ws;
             this.mapper = mapper;
             this.sampleRateHz = sampleRateHz;
+            this.state = state;
         }
-
-        private long sentChunks = 0;
 
         @Override
         public void pushAudio(byte[] audio) {
             if (audio == null || audio.length == 0) return;
+            // 1) Send the audio chunk.
             String json;
             try {
                 ObjectNode msg = mapper.createObjectNode();
@@ -162,10 +188,47 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                         callId, ex.getMessage());
                 return;
             }
-            // Chain sends so the previous one completes before we issue the next.
             sendChain.updateAndGet(prev -> prev.thenCompose(ignored -> ws.sendText(json, true))
                     .exceptionally(ex -> {
                         log.warn("[elevenlabs-stt] sendText failed callId={}: {}",
+                                callId, ex.getMessage());
+                        return ws;
+                    }));
+
+            // 2) Manual-commit check: if we've received a partial AND silence has
+            //    elapsed since, send the commit message ourselves so the server
+            //    finalises the turn promptly. CAS prevents double-sending.
+            if (state != null && state.manual && state.hasUncommittedPartial.get()) {
+                long now = System.currentTimeMillis();
+                if (now - state.lastPartialAtMs >= state.silenceMs
+                        && state.hasUncommittedPartial.compareAndSet(true, false)) {
+                    log.info("[elevenlabs-stt] callId={} sending manual commit after {} ms silence",
+                            callId, now - state.lastPartialAtMs);
+                    sendCommit();
+                }
+            }
+        }
+
+        private void sendCommit() {
+            // ElevenLabs Scribe realtime expects a `commit:true` flag on an
+            // input_audio_chunk message (not a separate "commit" message type).
+            // We send an empty chunk with the flag set to force end-of-turn.
+            String json;
+            try {
+                ObjectNode msg = mapper.createObjectNode();
+                msg.put("message_type", "input_audio_chunk");
+                msg.put("audio_base_64", "");
+                msg.put("commit", true);
+                msg.put("sample_rate", sampleRateHz);
+                json = mapper.writeValueAsString(msg);
+            } catch (Exception ex) {
+                log.warn("[elevenlabs-stt] failed to serialise commit callId={}: {}",
+                        callId, ex.getMessage());
+                return;
+            }
+            sendChain.updateAndGet(prev -> prev.thenCompose(ignored -> ws.sendText(json, true))
+                    .exceptionally(ex -> {
+                        log.warn("[elevenlabs-stt] commit send failed callId={}: {}",
                                 callId, ex.getMessage());
                         return ws;
                     }));
@@ -190,12 +253,15 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         private final String callId;
         private final Consumer<TranscriptEvent> sink;
         private final ObjectMapper mapper;
+        private final ManualCommitState state;
         private final StringBuilder textBuffer = new StringBuilder();
 
-        Listener(String callId, Consumer<TranscriptEvent> sink, ObjectMapper mapper) {
+        Listener(String callId, Consumer<TranscriptEvent> sink, ObjectMapper mapper,
+                 ManualCommitState state) {
             this.callId = callId;
             this.sink = sink;
             this.mapper = mapper;
+            this.state = state;
         }
 
         @Override
@@ -225,10 +291,20 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                 switch (messageType) {
                     case "partial_transcript" -> {
                         if (!text.isBlank()) {
+                            // Track for manual-commit silence detection: the
+                            // pushAudio loop watches lastPartialAtMs and sends a
+                            // commit once silenceMs has elapsed.
+                            if (state != null && state.manual) {
+                                state.lastPartialAtMs = System.currentTimeMillis();
+                                state.hasUncommittedPartial.set(true);
+                            }
                             sink.accept(new TranscriptEvent(text, false, conf));
                         }
                     }
                     case "committed_transcript", "committed_transcript_with_timestamps" -> {
+                        if (state != null && state.manual) {
+                            state.hasUncommittedPartial.set(false);
+                        }
                         if (!text.isBlank()) {
                             sink.accept(new TranscriptEvent(text, true, conf));
                         }

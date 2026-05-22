@@ -63,6 +63,7 @@ public class TelephonyWebhookController {
                 StreamHandoff handoff = StreamHandoff.builder()
                         .callId(call.getCallId())
                         .businessId(business.getBusinessId())
+                        .businessName(business.getName())
                         .customerPhone(call.getFromNumber())
                         .wsUrl(buildWsUrl(provider.name(), call.getCallId()))
                         .build();

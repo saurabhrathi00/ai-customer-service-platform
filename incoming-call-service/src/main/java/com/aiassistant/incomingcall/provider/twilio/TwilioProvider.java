@@ -69,12 +69,16 @@ public class TwilioProvider implements TelephonyProvider {
     public TelephonyResponse buildStreamHandoff(StreamHandoff handoff) {
         // track=inbound_track: receive ONLY the caller's audio, not our own TTS bleed-back.
         // Eliminates echo and stops STT from transcribing the bot's own voice.
-        Stream stream = new Stream.Builder()
+        Stream.Builder streamBuilder = new Stream.Builder()
                 .url(handoff.getWsUrl())
                 .track(Stream.Track.INBOUND_TRACK)
                 .parameter(new Parameter.Builder().name("businessId").value(handoff.getBusinessId()).build())
-                .parameter(new Parameter.Builder().name("customerPhone").value(handoff.getCustomerPhone()).build())
-                .build();
+                .parameter(new Parameter.Builder().name("customerPhone").value(handoff.getCustomerPhone()).build());
+        if (handoff.getBusinessName() != null && !handoff.getBusinessName().isBlank()) {
+            streamBuilder.parameter(new Parameter.Builder()
+                    .name("businessName").value(handoff.getBusinessName()).build());
+        }
+        Stream stream = streamBuilder.build();
         Connect connect = new Connect.Builder().stream(stream).build();
 
         // Spoken pre-roll runs synchronously on Twilio's side. The Media Stream
