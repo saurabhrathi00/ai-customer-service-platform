@@ -130,6 +130,9 @@ services:
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+      # Public wss:// URL Twilio will dial. MUST be set on the host —
+      # the default in configs/service.properties is a CHANGE_ME placeholder.
+      CONFIGS_CALLORCHESTRATION_WSBASEURL: ${CONFIGS_CALLORCHESTRATION_WSBASEURL:?set the public wss URL for call-orchestration-service}
     volumes:
       - /etc/secrets/incoming-call-service/secrets.properties:/etc/secrets/secrets.properties:ro
     networks:
