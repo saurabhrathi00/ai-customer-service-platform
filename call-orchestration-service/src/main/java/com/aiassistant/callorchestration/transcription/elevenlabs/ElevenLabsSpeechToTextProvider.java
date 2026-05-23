@@ -106,10 +106,17 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
             q.append("&commit_strategy=").append(el.getSttCommitStrategy());
         }
         q.append("&no_verbatim=").append(el.isSttNoVerbatim());
-        // NOTE: vad_silence_threshold_secs is NOT supported on the WebSocket
-        // realtime endpoint. With commit_strategy=manual the server never
-        // commits on its own — we send the commit message ourselves after a
-        // configurable silence window (see ManualCommitState below).
+        // VAD-mode params — only meaningful when commit_strategy=vad. Sending
+        // them on a manual session is a no-op but the server still parses
+        // them, so we tolerate either.
+        if ("vad".equalsIgnoreCase(el.getSttCommitStrategy())) {
+            if (el.getSttVadSilenceThresholdSecs() != null) {
+                q.append("&vad_silence_threshold_secs=").append(el.getSttVadSilenceThresholdSecs());
+            }
+            if (el.getSttVadThreshold() != null) {
+                q.append("&vad_threshold=").append(el.getSttVadThreshold());
+            }
+        }
 
         URI uri = URI.create(endpoint + q);
 
@@ -141,7 +148,12 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
     static class ManualCommitState {
         final long silenceMs;
         final boolean manual;
+        /** Wall-clock of the last partial whose TEXT actually changed.
+         *  ElevenLabs emits keepalive partials with unchanged text every
+         *  ~1s while the caller is silent — those must NOT reset the
+         *  silence clock or commit never fires. */
         volatile long lastPartialAtMs = 0;
+        volatile String lastPartialText = "";
         final java.util.concurrent.atomic.AtomicBoolean hasUncommittedPartial =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         ManualCommitState(long silenceMs, boolean manual) {
@@ -255,6 +267,14 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         private final ObjectMapper mapper;
         private final ManualCommitState state;
         private final StringBuilder textBuffer = new StringBuilder();
+        /** Dedupe back-to-back duplicate finals — ElevenLabs Scribe realtime
+         *  emits both {@code committed_transcript} and
+         *  {@code committed_transcript_with_timestamps} for the same commit,
+         *  which doubles every utterance and re-triggers barge-in on top of
+         *  itself. Window is generous (1.5s) to also cover any retransmit. */
+        private static final long DEDUPE_WINDOW_MS = 1500L;
+        private volatile String lastFinalText = null;
+        private volatile long lastFinalAtMs = 0L;
 
         Listener(String callId, Consumer<TranscriptEvent> sink, ObjectMapper mapper,
                  ManualCommitState state) {
@@ -291,12 +311,25 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                 switch (messageType) {
                     case "partial_transcript" -> {
                         if (!text.isBlank()) {
-                            // Track for manual-commit silence detection: the
-                            // pushAudio loop watches lastPartialAtMs and sends a
-                            // commit once silenceMs has elapsed.
                             if (state != null && state.manual) {
-                                state.lastPartialAtMs = System.currentTimeMillis();
-                                state.hasUncommittedPartial.set(true);
+                                // Only reset the silence clock when the
+                                // partial text actually advances. Identical
+                                // keepalive partials must NOT count as new
+                                // speech, otherwise the silence threshold
+                                // never elapses and commit never fires.
+                                if (!text.equals(state.lastPartialText)) {
+                                    state.lastPartialAtMs = System.currentTimeMillis();
+                                    state.lastPartialText = text;
+                                    state.hasUncommittedPartial.set(true);
+                                    log.info("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
+                                            callId, conf, text);
+                                } else {
+                                    log.debug("[stt] PARTIAL-KEEPALIVE callId={} text unchanged",
+                                            callId);
+                                }
+                            } else {
+                                log.info("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
+                                        callId, conf, text);
                             }
                             sink.accept(new TranscriptEvent(text, false, conf));
                         }
@@ -304,10 +337,26 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                     case "committed_transcript", "committed_transcript_with_timestamps" -> {
                         if (state != null && state.manual) {
                             state.hasUncommittedPartial.set(false);
+                            // Reset so the next utterance's first partial is
+                            // always treated as new text (it will likely be
+                            // a different string anyway, but be defensive).
+                            state.lastPartialText = "";
                         }
-                        if (!text.isBlank()) {
-                            sink.accept(new TranscriptEvent(text, true, conf));
+                        if (text.isBlank()) {
+                            log.info("[stt] FINAL-EMPTY callId={} type={}", callId, messageType);
+                            break;
                         }
+                        long now = System.currentTimeMillis();
+                        if (text.equals(lastFinalText) && (now - lastFinalAtMs) < DEDUPE_WINDOW_MS) {
+                            log.info("[stt] FINAL-DEDUPE callId={} type={} sinceLast={}ms text=\"{}\"",
+                                    callId, messageType, now - lastFinalAtMs, text);
+                            break;
+                        }
+                        lastFinalText = text;
+                        lastFinalAtMs = now;
+                        log.info("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
+                                callId, conf, messageType, text);
+                        sink.accept(new TranscriptEvent(text, true, conf));
                     }
                     case "error", "auth_error", "quota_exceeded", "rate_limited",
                          "input_error", "chunk_size_exceeded", "transcriber_error" ->

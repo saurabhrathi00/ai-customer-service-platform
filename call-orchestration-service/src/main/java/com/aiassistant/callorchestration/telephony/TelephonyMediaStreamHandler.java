@@ -19,20 +19,12 @@ public interface TelephonyMediaStreamHandler {
     void onConnect(CallSession session, Map<String, String> connectParams);
 
     /**
-     * Raw text frame from the provider's WebSocket. The handler is responsible
-     * for parsing its provider-specific JSON and dispatching to the
-     * {@code onAudioFrame} / {@code onProviderEvent} methods below.
+     * Raw text frame from the provider's WebSocket. The handler parses
+     * provider-specific JSON and routes audio frames internally.
      */
     default void onInboundFrame(CallSession session, String payload) {
         // no-op default
     }
 
-    void onAudioFrame(CallSession session, byte[] audioPayload, AudioCodec codec);
-
-    void onProviderEvent(CallSession session, String eventType, Map<String, Object> payload);
-
     void onDisconnect(CallSession session, String reason);
-
-    /** Encode an outbound audio chunk in this provider's expected format. */
-    byte[] encodeOutboundAudio(CallSession session, byte[] pcm16k);
 }

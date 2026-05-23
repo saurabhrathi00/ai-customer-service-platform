@@ -93,53 +93,105 @@ public class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         long[] firstChunkAt = {-1};
         int[] totalBytes = {0};
 
-        try {
-            restClient.post()
-                    .uri(uri -> uri.path("/v1/text-to-speech/{voiceId}/stream")
-                            .queryParam("output_format", outputFormat)
-                            .build(voiceId))
-                    .header("xi-api-key", apiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(buildBody(text, modelId, cfg))
-                    .exchange((req, resp) -> {
-                        HttpStatusCode code = resp.getStatusCode();
-                        if (!code.is2xxSuccessful()) {
-                            String body = new String(resp.getBody().readAllBytes(), StandardCharsets.UTF_8);
-                            throw new DownstreamServiceException(
-                                    "ElevenLabs TTS failed: HTTP " + code.value() + " - " + body);
-                        }
-                        try (InputStream in = resp.getBody()) {
-                            byte[] buf = new byte[TWILIO_FRAME_BYTES];
-                            int filled = 0;
-                            int n;
-                            while ((n = in.read(buf, filled, buf.length - filled)) != -1) {
-                                filled += n;
-                                if (filled == buf.length) {
+        // Retry envelope for transient 429 / 5xx from ElevenLabs. We only
+        // retry if NO bytes have been streamed downstream yet — once Twilio
+        // has any audio, re-running the request would produce overlapping /
+        // duplicated playback.
+        final int MAX_ATTEMPTS = 3;
+        DownstreamServiceException lastEx = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                restClient.post()
+                        .uri(uri -> uri.path("/v1/text-to-speech/{voiceId}/stream")
+                                .queryParam("output_format", outputFormat)
+                                .build(voiceId))
+                        .header("xi-api-key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(buildBody(text, modelId, cfg))
+                        .exchange((req, resp) -> {
+                            HttpStatusCode code = resp.getStatusCode();
+                            if (!code.is2xxSuccessful()) {
+                                String body = new String(resp.getBody().readAllBytes(), StandardCharsets.UTF_8);
+                                boolean retryable = code.value() == 429 || code.is5xxServerError();
+                                throw new TtsHttpException(code.value(), body, retryable);
+                            }
+                            try (InputStream in = resp.getBody()) {
+                                byte[] buf = new byte[TWILIO_FRAME_BYTES];
+                                int filled = 0;
+                                int n;
+                                while ((n = in.read(buf, filled, buf.length - filled)) != -1) {
+                                    filled += n;
+                                    if (filled == buf.length) {
+                                        if (firstChunkAt[0] < 0) firstChunkAt[0] = System.currentTimeMillis();
+                                        totalBytes[0] += filled;
+                                        onChunk.accept(buf);
+                                        buf = new byte[TWILIO_FRAME_BYTES];
+                                        filled = 0;
+                                    }
+                                }
+                                if (filled > 0) {
+                                    byte[] tail = new byte[filled];
+                                    System.arraycopy(buf, 0, tail, 0, filled);
                                     if (firstChunkAt[0] < 0) firstChunkAt[0] = System.currentTimeMillis();
                                     totalBytes[0] += filled;
-                                    onChunk.accept(buf);
-                                    buf = new byte[TWILIO_FRAME_BYTES];
-                                    filled = 0;
+                                    onChunk.accept(tail);
                                 }
+                            } catch (IOException ex) {
+                                throw new DownstreamServiceException("ElevenLabs TTS stream read failed", ex);
                             }
-                            if (filled > 0) {
-                                byte[] tail = new byte[filled];
-                                System.arraycopy(buf, 0, tail, 0, filled);
-                                if (firstChunkAt[0] < 0) firstChunkAt[0] = System.currentTimeMillis();
-                                totalBytes[0] += filled;
-                                onChunk.accept(tail);
-                            }
-                        } catch (IOException ex) {
-                            throw new DownstreamServiceException("ElevenLabs TTS stream read failed", ex);
-                        }
-                        return null;
-                    });
-            log.debug("[elevenlabs] tts voice={} chars={} bytes={} ttFirstByteMs={} totalMs={}",
-                    voiceId, text.length(), totalBytes[0],
-                    firstChunkAt[0] < 0 ? -1 : (firstChunkAt[0] - start),
-                    System.currentTimeMillis() - start);
-        } catch (RestClientException ex) {
-            throw new DownstreamServiceException("ElevenLabs TTS failed: " + ex.getMessage(), ex);
+                            return null;
+                        });
+                log.info("[tts-el] voice={} chars={} bytes={} ttFirstByteMs={} totalMs={} attempt={} text=\"{}\"",
+                        voiceId, text.length(), totalBytes[0],
+                        firstChunkAt[0] < 0 ? -1 : (firstChunkAt[0] - start),
+                        System.currentTimeMillis() - start, attempt,
+                        text.length() > 60 ? text.substring(0, 60) + "…" : text);
+                return; // success
+            } catch (TtsHttpException ex) {
+                lastEx = new DownstreamServiceException(
+                        "ElevenLabs TTS failed: HTTP " + ex.status + " - " + ex.body);
+                if (totalBytes[0] > 0) {
+                    log.warn("[tts-el] mid-stream failure — cannot retry (bytes already sent) callId attempt={}", attempt);
+                    throw lastEx;
+                }
+                if (!ex.retryable || attempt == MAX_ATTEMPTS) {
+                    throw lastEx;
+                }
+                long backoffMs = 200L * (1L << (attempt - 1)); // 200, 400, 800ms
+                log.warn("[tts-el] retrying after HTTP {} attempt={} backoffMs={}",
+                        ex.status, attempt, backoffMs);
+                try { Thread.sleep(backoffMs); }
+                catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw lastEx;
+                }
+            } catch (RestClientException ex) {
+                lastEx = new DownstreamServiceException("ElevenLabs TTS failed: " + ex.getMessage(), ex);
+                if (totalBytes[0] > 0 || attempt == MAX_ATTEMPTS) throw lastEx;
+                long backoffMs = 200L * (1L << (attempt - 1));
+                log.warn("[tts-el] retrying after network error attempt={} backoffMs={} err={}",
+                        attempt, backoffMs, ex.getMessage());
+                try { Thread.sleep(backoffMs); }
+                catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw lastEx;
+                }
+            }
+        }
+        if (lastEx != null) throw lastEx;
+    }
+
+    /** Internal carrier for ElevenLabs HTTP failures so the retry loop can
+     *  distinguish retryable (429/5xx) from non-retryable (4xx auth, etc). */
+    private static final class TtsHttpException extends RuntimeException {
+        final int status;
+        final String body;
+        final boolean retryable;
+        TtsHttpException(int status, String body, boolean retryable) {
+            super("HTTP " + status);
+            this.status = status;
+            this.body = body;
+            this.retryable = retryable;
         }
     }
 

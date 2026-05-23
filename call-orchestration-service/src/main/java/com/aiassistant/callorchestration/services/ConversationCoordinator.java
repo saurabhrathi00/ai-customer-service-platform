@@ -41,6 +41,16 @@ public class ConversationCoordinator {
     private final KnowledgeServiceClient knowledgeServiceClient;
     private final CallSessionRegistry callSessionRegistry;
     private final PostCallOrchestrator postCallOrchestrator;
+    @org.springframework.beans.factory.annotation.Qualifier("silenceWatchdogScheduler")
+    private final java.util.concurrent.ScheduledExecutorService scheduler;
+
+    /** Debounce window for STT finals. After receiving a FINAL we wait this
+     *  many ms; if another FINAL arrives we append and reset the timer.
+     *  This smooths over Deepgram's mid-sentence segmentation — natural
+     *  pauses inside a single user thought no longer get treated as
+     *  separate turns. Tuned higher (1.5s) after callers complained the
+     *  bot started replying on top of their mid-sentence pauses. */
+    private static final long UTTERANCE_FLUSH_DELAY_MS = 1500L;
 
     private final java.util.concurrent.ConcurrentMap<String, CallEventListener> listeners
             = new java.util.concurrent.ConcurrentHashMap<>();
@@ -52,6 +62,10 @@ public class ConversationCoordinator {
         default void onAiReplyChunk(String callId, String deltaText) {}
         /** Streaming terminal — flush any TTS buffer and mark end of turn. */
         default void onAiReplyDone(String callId) {}
+        /** ai-conv signalled a transient error / the LLM is unreachable.
+         *  The listener should play a canned "trouble" message so the caller
+         *  isn't left hanging. */
+        default void onAiTransientFailure(String callId) {}
         /** AI cannot answer — telephony should announce callback + hang up. */
         void onCallbackNeeded(String callId);
         /** Conversation is over — telephony synthesizes {@code spokenText}
@@ -64,30 +78,38 @@ public class ConversationCoordinator {
     public void onCallStart(String callId, CallEventListener listener) {
         CallSession session = callSessionRegistry.get(callId)
                 .orElseThrow(() -> new IllegalStateException("No CallSession for callId=" + callId));
-
-        String knowledge = knowledgeServiceClient.fetchKnowledgeText(session.getBusinessId());
-        session.setKnowledgeText(knowledge);
-
-        String greeting = buildGreeting(knowledge, session.getLanguage(), session.getBusinessName());
-        session.setGreeting(greeting);
-
         listeners.put(callId, listener);
-        wsClient.open(buildInit(session), new InboundDispatcher(callId));
 
-        // Initialize silence clock to "now" so we don't fire prompts during
-        // Silence detection disabled — too noisy / fires during natural pauses.
-        // The sttFinalAtMs attribute is still maintained elsewhere for the
-        // [latency] end2end metric.
-        long now = System.currentTimeMillis();
-        session.getProviderAttributes().putIfAbsent("sttFinalAtMs", now);
-
-        // Bot speaks first — no LLM round-trip on the opening turn. The same
-        // greeting is also pre-seeded in ai-conv history via the INIT frame,
-        // so subsequent turns stay context-coherent.
+        // Fire the greeting IMMEDIATELY using only what we already have on
+        // the session (businessName came from Twilio custom params at
+        // handshake, language is optional). Knowledge fetch + AI WS open
+        // used to run synchronously here and could take 10+ seconds, leaving
+        // the caller in dead silence before any audio played. They now run
+        // on the scheduler thread while the greeting is being TTS'd.
+        String greeting = buildGreeting(null, session.getLanguage(), session.getBusinessName());
+        session.setGreeting(greeting);
+        log.info("[conv] callId={} ASSISTANT (greeting) → \"{}\"", callId, greeting);
         session.getTranscript().add(CallSession.TranscriptEntry.builder()
                 .speaker("assistant").text(greeting).timestamp(Instant.now()).build());
         dispatchToListener(callId, l -> l.onAiReply(callId, greeting));
 
+        // Heavy work in the background. By the time the greeting finishes
+        // playing (~3s) the WS is typically up and ready for the first
+        // user turn. If the user somehow speaks before the WS opens, the
+        // utterance flush will retry until the WS is available.
+        scheduler.execute(() -> initialiseAiConversation(callId, session));
+    }
+
+    private void initialiseAiConversation(String callId, CallSession session) {
+        try {
+            String knowledge = knowledgeServiceClient.fetchKnowledgeText(session.getBusinessId());
+            session.setKnowledgeText(knowledge);
+            wsClient.open(buildInit(session), new InboundDispatcher(callId));
+            log.info("[init] async knowledge + ai-conv WS ready callId={}", callId);
+        } catch (Exception ex) {
+            log.error("[init] async knowledge/WS open failed callId={}: {}",
+                    callId, ex.getMessage(), ex);
+        }
     }
 
     /**
@@ -167,25 +189,110 @@ public class ConversationCoordinator {
             log.info("[stt] empty final dropped callId={} clear={}", callId, clear);
             return;
         }
-        String messageId = ULID_GEN.nextULID();
         CallSession session = callSessionRegistry.get(callId).orElse(null);
         if (session == null) {
             log.warn("No CallSession for utterance callId={}", callId);
             return;
         }
-        session.getTranscript().add(CallSession.TranscriptEntry.builder()
-                .speaker("customer").text(text).timestamp(Instant.now()).build());
-        session.getLastUtteranceSentAtMs().set(System.currentTimeMillis());
-        if (clear) {
-            long t = System.currentTimeMillis();
-            session.getProviderAttributes().put("msgSentAtMs", t);
-            log.info("[latency] callId={} stage=msg-sent chars={}", callId, text.length());
-            wsClient.sendUserMessage(session.getConversationId(), messageId, text);
-        } else {
-            log.info("[unclear] callId={} conversationId={} sttText=\"{}\" — sending UNCLEAR_MESSAGE",
-                    callId, session.getConversationId(), text);
-            wsClient.sendUnclearMessage(session.getConversationId(), messageId);
+        // HANGUP has already fired — the farewell is playing and the call
+        // is about to drop. Drop any STT finals that arrive in this window
+        // so we don't queue another LLM turn / another farewell.
+        if (session.getEndingCall().get()) {
+            log.info("[stt] dropped — call ending callId={} text=\"{}\"", callId, text);
+            return;
         }
+
+        // Unclear (low-confidence) finals bypass the debounce — they get
+        // their own canned "please repeat" reply via ai-conv and shouldn't
+        // be merged with prior text.
+        if (!clear) {
+            String messageId = ULID_GEN.nextULID();
+            session.getTranscript().add(CallSession.TranscriptEntry.builder()
+                    .speaker("customer").text(text).timestamp(Instant.now()).build());
+            session.setActiveMessageId(messageId);
+            log.info("[conv] callId={} CUSTOMER (unclear) → \"{}\"", callId, text);
+            log.info("[ai-req] callId={} msgId={} UNCLEAR_MESSAGE sent to ai-conv", callId, messageId);
+            wsClient.sendUnclearMessage(session.getConversationId(), messageId);
+            return;
+        }
+
+        // Debounce: buffer this FINAL, reset the flush timer. If another
+        // FINAL lands within UTTERANCE_FLUSH_DELAY_MS we append + reset
+        // again. When silence outlasts the window, flushPendingUtterance
+        // ships everything as one MESSAGE.
+        appendAndScheduleFlush(session, text);
+    }
+
+    private synchronized void appendAndScheduleFlush(CallSession session, String text) {
+        StringBuilder buf = session.getPendingUtterance();
+        synchronized (buf) {
+            if (buf.length() > 0 && !endsWithSpace(buf)) buf.append(' ');
+            buf.append(text);
+        }
+        log.info("[stt] FINAL-BUFFERED callId={} bufLen={} chunk=\"{}\"",
+                session.getCallId(), buf.length(), text);
+
+        java.util.concurrent.ScheduledFuture<?> prev = session.getPendingUtteranceFlush();
+        if (prev != null) prev.cancel(false);
+        java.util.concurrent.ScheduledFuture<?> next = scheduler.schedule(
+                () -> flushPendingUtterance(session),
+                UTTERANCE_FLUSH_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        session.setPendingUtteranceFlush(next);
+    }
+
+    private void flushPendingUtterance(CallSession session) {
+        String full;
+        StringBuilder buf = session.getPendingUtterance();
+        synchronized (buf) {
+            full = buf.toString().trim();
+            buf.setLength(0);
+        }
+        session.setPendingUtteranceFlush(null);
+        if (full.isEmpty()) return;
+        if (session.getEndingCall().get()) {
+            log.info("[stt] flush dropped — call ending callId={} text=\"{}\"",
+                    session.getCallId(), full);
+            return;
+        }
+        String messageId = ULID_GEN.nextULID();
+        session.getTranscript().add(CallSession.TranscriptEntry.builder()
+                .speaker("customer").text(full).timestamp(Instant.now()).build());
+        session.setActiveMessageId(messageId);
+        log.info("[conv] callId={} CUSTOMER → \"{}\"", session.getCallId(), full);
+        log.info("[ai-req] callId={} msgId={} MESSAGE sent to ai-conv (debounced)",
+                session.getCallId(), messageId);
+        sendUserMessageWithReadinessWait(session.getConversationId(), messageId, full,
+                session.getCallId());
+    }
+
+    /** Greeting fires before the AI WS open completes, so a user who
+     *  speaks during the greeting may get a flush before the WS is ready.
+     *  Poll briefly (every 100 ms, up to 5 s) and then give up. The 5 s
+     *  ceiling matches the slow-path budget without blocking forever. */
+    private void sendUserMessageWithReadinessWait(String conversationId, String messageId,
+                                                  String text, String callId) {
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (wsClient.isOpen(conversationId)) {
+                try {
+                    wsClient.sendUserMessage(conversationId, messageId, text);
+                    return;
+                } catch (Exception ex) {
+                    log.warn("sendUserMessage failed callId={}: {}", callId, ex.getMessage());
+                    return;
+                }
+            }
+            try { Thread.sleep(100); }
+            catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+        }
+        log.warn("sendUserMessage gave up — AI WS never opened for callId={} conv={}",
+                callId, conversationId);
+    }
+
+    private static boolean endsWithSpace(CharSequence cs) {
+        if (cs.length() == 0) return true;
+        char c = cs.charAt(cs.length() - 1);
+        return Character.isWhitespace(c);
     }
 
     public void onCallEnd(String callId) {
@@ -199,14 +306,58 @@ public class ConversationCoordinator {
         }
         CallSession session = callSessionRegistry.get(callId).orElse(null);
         String conversationId = session != null ? session.getConversationId() : callId;
+
+        // Cancel any pending STT-debounce flush + drop its buffer. Without
+        // this a late timer fires after the WS is gone and we either log
+        // a noisy failure or queue a doomed MESSAGE on a closed session.
+        if (session != null) {
+            java.util.concurrent.ScheduledFuture<?> pending = session.getPendingUtteranceFlush();
+            if (pending != null) pending.cancel(false);
+            session.setPendingUtteranceFlush(null);
+            synchronized (session.getPendingUtterance()) {
+                session.getPendingUtterance().setLength(0);
+            }
+        }
+
         wsClient.close(conversationId);
+
+        // Normal-end finalisation. ai-conv does not currently send a HISTORY
+        // frame back, so we build the history from CallSession.transcript
+        // (already populated turn-by-turn during the call) and run the
+        // post-call pipeline ourselves. PostCallOrchestrator.finalizeCall is
+        // idempotent via session.finalized so a late HISTORY frame or REST
+        // /history fallback would be a safe no-op.
+        if (session != null) {
+            try {
+                List<Map<String, String>> history = buildHistoryFromTranscript(session);
+                postCallOrchestrator.finalizeCall(session, history);
+            } catch (Exception ex) {
+                log.error("finalizeCall failed callId={}: {}", callId, ex.getMessage(), ex);
+            }
+        }
     }
 
-    // Silence detection was intentionally removed — telephony concern, not
-    // LLM concern. When re-adding, drive the streak + canned "are you still
-    // there?" entirely inside call-orchestration via a ScheduledExecutorService
-    // that dispatches `onAiReply` / `onHangup` to the listener directly. See
-    // git history for the previous implementation.
+    private static List<Map<String, String>> buildHistoryFromTranscript(CallSession session) {
+        if (session.getTranscript() == null || session.getTranscript().isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, String>> out = new java.util.ArrayList<>(session.getTranscript().size());
+        for (CallSession.TranscriptEntry e : session.getTranscript()) {
+            if (e == null || e.getText() == null || e.getText().isBlank()) continue;
+            String role = mapSpeakerToRole(e.getSpeaker());
+            out.add(Map.of("role", role, "content", e.getText()));
+        }
+        return out;
+    }
+
+    /** Normalise to LLM-style {@code user} / {@code assistant} roles regardless
+     *  of which casing the speaker was written with along the call path. */
+    private static String mapSpeakerToRole(String speaker) {
+        if (speaker == null) return "user";
+        String s = speaker.trim().toLowerCase();
+        if (s.equals("assistant") || s.equals("bot") || s.equals("ai")) return "assistant";
+        return "user";
+    }
 
     private void dispatchToListener(String callId, Consumer<CallEventListener> action) {
         CallEventListener l = listeners.get(callId);
@@ -242,17 +393,17 @@ public class ConversationCoordinator {
 
         InboundDispatcher(String callId) { this.callId = callId; }
 
-        private void logResponseLatency(CallSession session, String stage, int chars) {
-            if (session == null) return;
-            Object t = session.getProviderAttributes().get("msgSentAtMs");
-            long delta = t instanceof Long s ? System.currentTimeMillis() - s : -1;
-            log.info("[latency] callId={} stage={} ms={} chars={}", callId, stage, delta, chars);
-        }
-
         @Override
         public void onResponse(String conversationId, String replyToMessageId, String text) {
             CallSession session = callSessionRegistry.get(callId).orElse(null);
-            logResponseLatency(session, "response-final", text == null ? 0 : text.length());
+            if (session != null && isStaleTurn(session, replyToMessageId)) {
+                log.info("[ai-resp] STALE-RESPONSE callId={} replyTo={} active={} text=\"{}\"",
+                        callId, replyToMessageId, session.getActiveMessageId(), text);
+                return;
+            }
+            log.info("[ai-resp] RESPONSE callId={} replyTo={} text=\"{}\"",
+                    callId, replyToMessageId, text);
+            log.info("[conv] callId={} ASSISTANT → \"{}\"", callId, text);
             if (session != null) {
                 session.getTranscript().add(CallSession.TranscriptEntry.builder()
                         .speaker("assistant").text(text).timestamp(Instant.now()).build());
@@ -263,12 +414,26 @@ public class ConversationCoordinator {
         @Override
         public void onResponseDelta(String conversationId, String replyToMessageId, String deltaText) {
             if (deltaText == null || deltaText.isEmpty()) return;
-            if (streamingAcc.length() == 0) {
-                CallSession session = callSessionRegistry.get(callId).orElse(null);
-                logResponseLatency(session, "response-first-delta", deltaText.length());
+            CallSession session = callSessionRegistry.get(callId).orElse(null);
+            if (session != null && isStaleTurn(session, replyToMessageId)) {
+                log.info("[ai-resp] STALE-DELTA callId={} replyTo={} active={} text=\"{}\"",
+                        callId, replyToMessageId, session.getActiveMessageId(), deltaText);
+                return;
             }
+            log.info("[ai-resp] DELTA callId={} replyTo={} text=\"{}\"",
+                    callId, replyToMessageId, deltaText);
             streamingAcc.append(deltaText);
             dispatch(l -> l.onAiReplyChunk(callId, deltaText));
+        }
+
+        /** A reply is stale when its {@code replyToMessageId} doesn't match the
+         *  session's current active message. {@code null} on the inbound frame
+         *  means "no turn correlation" (e.g. the initial greeting path that
+         *  goes around ai-conv) — treat as fresh. */
+        private boolean isStaleTurn(CallSession session, String replyToMessageId) {
+            if (replyToMessageId == null) return false;
+            String active = session.getActiveMessageId();
+            return active != null && !active.equals(replyToMessageId);
         }
 
         @Override
@@ -276,8 +441,15 @@ public class ConversationCoordinator {
             String full = streamingAcc.toString();
             streamingAcc.setLength(0);
             CallSession session = callSessionRegistry.get(callId).orElse(null);
-            logResponseLatency(session, "response-done", full.length());
+            if (session != null && isStaleTurn(session, replyToMessageId)) {
+                log.info("[ai-resp] STALE-DONE callId={} replyTo={} chars={}",
+                        callId, replyToMessageId, full.length());
+                return;
+            }
+            log.info("[ai-resp] DONE callId={} replyTo={} finishReason={} totalChars={}",
+                    callId, replyToMessageId, finishReason, full.length());
             if (!full.isBlank()) {
+                log.info("[conv] callId={} ASSISTANT (full) → \"{}\"", callId, full);
                 if (session != null) {
                     session.getTranscript().add(CallSession.TranscriptEntry.builder()
                             .speaker("assistant").text(full).timestamp(Instant.now()).build());
@@ -302,6 +474,9 @@ public class ConversationCoordinator {
 
         @Override
         public void onCallbackNeeded(String conversationId, String replyToMessageId, String spokenText) {
+            log.info("[ai-resp] CALLBACK_NEEDED callId={} replyTo={} spoken=\"{}\"",
+                    callId, replyToMessageId, spokenText);
+            log.info("[conv] callId={} ASSISTANT (callback) → \"{}\"", callId, spokenText);
             CallSession session = callSessionRegistry.get(callId).orElse(null);
             if (session != null) {
                 session.setCallbackRequested(true);
@@ -317,17 +492,37 @@ public class ConversationCoordinator {
         }
 
         @Override
+        // Latch the endingCall flag synchronously so any STT final that lands
+        // between this method and the actual Twilio teardown is dropped at
+        // the onCustomerUtterance boundary. Without this we've seen the model
+        // re-emit HANGUP for the second user turn and TTS two farewells.
         public void onHangup(String conversationId, String replyToMessageId,
                              String spokenText, String reason) {
             CallSession session = callSessionRegistry.get(callId).orElse(null);
-            if (session != null && spokenText != null && !spokenText.isBlank()) {
-                session.getTranscript().add(CallSession.TranscriptEntry.builder()
-                        .speaker("assistant").text(spokenText).timestamp(Instant.now()).build());
+            if (session != null) {
+                // Latch FIRST so any STT final arriving in the next ms gets dropped.
+                if (!session.getEndingCall().compareAndSet(false, true)) {
+                    log.info("[ai-resp] HANGUP duplicate suppressed callId={}", callId);
+                    return;
+                }
+                // Kill any debounced flush in flight — it would queue a
+                // post-HANGUP MESSAGE and trigger another LLM turn just as
+                // the farewell starts playing.
+                java.util.concurrent.ScheduledFuture<?> pending = session.getPendingUtteranceFlush();
+                if (pending != null) pending.cancel(false);
+                session.setPendingUtteranceFlush(null);
+                synchronized (session.getPendingUtterance()) {
+                    session.getPendingUtterance().setLength(0);
+                }
+                if (spokenText != null && !spokenText.isBlank()) {
+                    session.getTranscript().add(CallSession.TranscriptEntry.builder()
+                            .speaker("assistant").text(spokenText).timestamp(Instant.now()).build());
+                }
             }
-            log.info("[hangup] callId={} reason={} spoken=\"{}\"", callId, reason, spokenText);
-            // Single dispatch — the listener atomically synthesises the farewell
-            // and then terminates the call so the TTS isn't cut off by a racing
-            // executor task.
+            log.info("[ai-resp] HANGUP callId={} reason={} spoken=\"{}\"", callId, reason, spokenText);
+            if (spokenText != null && !spokenText.isBlank()) {
+                log.info("[conv] callId={} ASSISTANT (farewell) → \"{}\"", callId, spokenText);
+            }
             dispatch(l -> l.onHangup(callId, spokenText, reason));
         }
 
@@ -345,6 +540,12 @@ public class ConversationCoordinator {
         @Override
         public void onError(String conversationId, String code, String message) {
             log.warn("ai-conv error callId={} code={} msg={}", callId, code, message);
+            // Anything LLM-side (transient stream failure, upstream 5xx, etc.)
+            // means no DELTA is coming for the in-flight turn. Cue the listener
+            // to play a fallback message so the caller hears *something*.
+            if (code != null && code.startsWith("LLM_")) {
+                dispatch(l -> l.onAiTransientFailure(callId));
+            }
         }
 
         @Override

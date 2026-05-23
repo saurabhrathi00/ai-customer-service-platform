@@ -136,6 +136,25 @@ services:
       auth-service:
         condition: service_healthy
 
+  conversation-summary-service:
+    build:
+      context: ./conversation-summary-service
+    image: ai-customer-service/conversation-summary-service:latest
+    container_name: conversation-summary-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8089:8089"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_CALLORCHESTRATIONSERVICE_BASEURL: http://call-orchestration-service:8086/call-orchestration-service
+    volumes:
+      - /etc/secrets/conversation-summary-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+
   call-orchestration-service:
     build:
       context: ./call-orchestration-service
@@ -150,6 +169,7 @@ services:
       CONFIGS_KNOWLEDGESERVICE_BASEURL: http://knowledge-service:8083/knowledge-service
       CONFIGS_AICONVERSATIONSERVICE_BASEURL: http://ai-conversation-service:8087/ai-conversation-service
       CONFIGS_AICONVERSATIONSERVICE_WSBASEURL: ws://ai-conversation-service:8087/ai-conversation-service/ws/conversation
+      CONFIGS_CONVERSATIONSUMMARYSERVICE_BASEURL: http://conversation-summary-service:8089/conversation-summary-service
     volumes:
       - /etc/secrets/call-orchestration-service/secrets.properties:/etc/secrets/secrets.properties:ro
     networks:
@@ -163,6 +183,9 @@ services:
         condition: service_healthy
       ai-conversation-service:
         condition: service_healthy
+      # Not in depends_on: conversation-summary-service is only contacted
+      # post-call (async). Requiring it at boot would create a startup
+      # cycle (summary-service also calls back here for transcripts).
 
   incoming-call-service:
     build:

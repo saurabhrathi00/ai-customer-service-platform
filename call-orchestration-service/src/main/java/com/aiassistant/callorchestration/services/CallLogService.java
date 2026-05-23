@@ -7,6 +7,8 @@ import com.aiassistant.callorchestration.models.request.UpdateFeedbackRequest;
 import com.aiassistant.callorchestration.models.request.UpdateSummaryRequest;
 import com.aiassistant.callorchestration.models.response.CallLogResponse;
 import com.aiassistant.callorchestration.models.response.CallbackResponse;
+import com.aiassistant.callorchestration.models.response.TranscriptPayload;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.aiassistant.callorchestration.repository.CallLogRepository;
 import com.aiassistant.callorchestration.services.mapper.CallLogMapper;
 import com.aiassistant.callorchestration.telephony.CallSession;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -62,6 +65,36 @@ public class CallLogService {
         CallLogEntity saved = callLogRepository.save(entity);
         log.info("Updated summary callId={}", callId);
         return CallLogMapper.toResponse(saved);
+    }
+
+    /**
+     * Return the stored transcript + caller context for a call. Used by
+     * conversation-summary-service to fetch the data it needs after a
+     * lightweight trigger. {@code businessName} and {@code knowledge} are
+     * not persisted on the row (yet) and come back null.
+     */
+    public TranscriptPayload getTranscript(String callLogId) {
+        CallLogEntity entity = callLogRepository.findById(callLogId)
+                .orElseThrow(() -> new CallNotFoundException("Call log not found: " + callLogId));
+        List<Map<String, String>> history = deserialiseHistory(entity.getTranscript());
+        return TranscriptPayload.builder()
+                .callLogId(entity.getId())
+                .businessId(entity.getBusinessId())
+                .customerPhone(entity.getCustomerPhone())
+                .history(history)
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, String>> deserialiseHistory(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json,
+                    new TypeReference<List<Map<String, String>>>() {});
+        } catch (Exception ex) {
+            log.warn("Failed to deserialise transcript JSON: {}", ex.getMessage());
+            return List.of();
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import com.aiassistant.callorchestration.models.request.UpdateHistoryRequest;
 import com.aiassistant.callorchestration.models.request.UpdateSummaryRequest;
 import com.aiassistant.callorchestration.models.response.CallLogResponse;
 import com.aiassistant.callorchestration.models.response.CallbackResponse;
+import com.aiassistant.callorchestration.models.response.TranscriptPayload;
 import com.aiassistant.callorchestration.services.CallLogService;
 import com.aiassistant.callorchestration.services.PostCallOrchestrator;
 import com.aiassistant.callorchestration.services.mapper.CallLogMapper;
@@ -33,6 +34,17 @@ public class InternalCallController {
     private final CallLogService callLogService;
     private final CallSessionRegistry callSessionRegistry;
     private final PostCallOrchestrator postCallOrchestrator;
+
+    /**
+     * Fetch the persisted transcript + caller context for a call.
+     * conversation-summary-service calls this on its async pipeline after
+     * receiving a /trigger from this service.
+     */
+    @GetMapping("/{callLogId}/transcript")
+    @PreAuthorize("hasAuthority('SCOPE_calls.internal.read')")
+    public ResponseEntity<TranscriptPayload> transcript(@PathVariable("callLogId") String callLogId) {
+        return ResponseEntity.ok(callLogService.getTranscript(callLogId));
+    }
 
     @GetMapping("/{businessId}/recent")
     @PreAuthorize("hasAuthority('SCOPE_calls.internal.read')")

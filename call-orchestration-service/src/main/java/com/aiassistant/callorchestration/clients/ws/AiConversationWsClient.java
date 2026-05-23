@@ -112,6 +112,18 @@ public class AiConversationWsClient {
         sendJson(conversationId, body);
     }
 
+    /** Tell ai-conv to cancel the in-flight LLM turn for this conversation —
+     *  caller interrupted the bot. ai-conv disposes its Reactor subscription
+     *  (which closes the upstream Gemini HTTP stream) and drops the partial
+     *  reply from history so the model doesn't think it spoke it. The
+     *  interrupting utterance arrives separately as the next MESSAGE. */
+    public void sendBargeIn(String conversationId) {
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", WsMessageType.BARGE_IN.name());
+        body.put("conversationId", conversationId);
+        sendJson(conversationId, body);
+    }
+
     /** Signal ai-conv that the latest STT segment was below the confidence
      *  threshold. ai-conv responds with a canned "please repeat" reply
      *  (no LLM round-trip). */

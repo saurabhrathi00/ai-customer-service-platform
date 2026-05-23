@@ -48,6 +48,17 @@ public class ConversationSession {
      *  canned text for UNCLEAR / greeting paths without an LLM hop. */
     @Setter private volatile String language;
 
+    /** Reactor Disposable for the currently-streaming LLM turn (if any).
+     *  When a new MESSAGE arrives the handler disposes this — that propagates
+     *  cancellation upstream to the Gemini HTTP stream so the model stops
+     *  generating tokens for a question the caller already abandoned. */
+    private final AtomicReference<reactor.core.Disposable> currentTurn = new AtomicReference<>();
+
+    /** messageId of the in-flight turn. A new MESSAGE bumps this; the prior
+     *  turn's emit/finish paths compare against it and bail out if superseded
+     *  so partial replies don't get written to history. */
+    @Setter private volatile String currentTurnMessageId;
+
     public ConversationSession(String conversationId, String businessId,
                                LlmProvider provider, String knowledge) {
         this.conversationId = conversationId;
@@ -70,6 +81,21 @@ public class ConversationSession {
     public void appendAssistant(String text) {
         messages.add(LlmMessage.builder().role(LlmMessage.Role.ASSISTANT).content(text).build());
         touch();
+    }
+
+    /** Pop the trailing entry IFF it's a user message — used by the
+     *  BARGE_IN handler to drop an unanswered question from history so
+     *  the next turn doesn't see it as a stale prompt the model still
+     *  owes an answer on. No-op if the tail is an assistant message. */
+    public boolean popLastIfUser() {
+        synchronized (messages) {
+            int n = messages.size();
+            if (n == 0) return false;
+            LlmMessage last = messages.get(n - 1);
+            if (last.getRole() != LlmMessage.Role.USER) return false;
+            messages.remove(n - 1);
+            return true;
+        }
     }
 
     public int incrementUnclearStreak() {

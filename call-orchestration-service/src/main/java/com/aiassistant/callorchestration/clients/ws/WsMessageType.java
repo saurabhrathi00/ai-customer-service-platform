@@ -11,6 +11,10 @@ public enum WsMessageType {
     /** STT confidence below threshold; ai-conv responds with a "please repeat"
      *  message instead of running an LLM turn. */
     UNCLEAR_MESSAGE,
+    /** Caller interrupted the bot. Tells ai-conv to cancel the in-flight LLM
+     *  turn and drop its partial reply from history. The actual interrupting
+     *  utterance arrives in the next MESSAGE frame. */
+    BARGE_IN,
     END,
 
     // Inbound (ai-conversation → this service)

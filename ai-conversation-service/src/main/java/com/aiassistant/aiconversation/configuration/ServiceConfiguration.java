@@ -12,12 +12,30 @@ public class ServiceConfiguration {
     private AuthService authService;
     private Llm llm;
     private Session session;
-    private Summary summary;
     private Prompts prompts;
+    private BusinessDb businessDb;
 
     @Data
     public static class AuthService {
         private String baseUrl;
+    }
+
+    @Data
+    public static class BusinessDb {
+        private String name;
+        private String schema;
+        private String url;
+        private Pool pool;
+    }
+
+    @Data
+    public static class Pool {
+        private int maximumPoolSize;
+        private int minimumIdle;
+        private long maxLifetimeMs;
+        private long idleTimeoutMs;
+        private long keepaliveTimeMs;
+        private String connectionTestQuery;
     }
 
     @Data
@@ -39,12 +57,6 @@ public class ServiceConfiguration {
         private int idleTimeoutMinutes;
         private int maxConcurrent;
         private int sweepIntervalSeconds;
-    }
-
-    @Data
-    public static class Summary {
-        private int maxOutputTokens;
-        private double temperature;
     }
 
     /**

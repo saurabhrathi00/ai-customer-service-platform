@@ -7,11 +7,8 @@ import com.aiassistant.aiconversation.llm.LlmProviderRegistry;
 import com.aiassistant.aiconversation.llm.LlmReply;
 import com.aiassistant.aiconversation.llm.LlmRequest;
 import com.aiassistant.aiconversation.models.request.RespondRequest;
-import com.aiassistant.aiconversation.models.request.SummariseRequest;
 import com.aiassistant.aiconversation.models.response.RespondResponse;
 import com.aiassistant.aiconversation.models.response.SessionInfoResponse;
-import com.aiassistant.aiconversation.models.response.SummariseResponse;
-import com.aiassistant.aiconversation.services.SummaryService;
 import com.aiassistant.aiconversation.session.ConversationSession;
 import com.aiassistant.aiconversation.session.SessionRegistry;
 import jakarta.validation.Valid;
@@ -33,7 +30,6 @@ public class InternalAiController {
 
     private final LlmProviderRegistry providerRegistry;
     private final ServiceConfiguration serviceConfiguration;
-    private final SummaryService summaryService;
     private final SessionRegistry sessionRegistry;
 
     @PostMapping("/respond")
@@ -56,10 +52,8 @@ public class InternalAiController {
                 .build());
     }
 
-    @PostMapping("/summarise")
-    public ResponseEntity<SummariseResponse> summarise(@Valid @RequestBody SummariseRequest req) {
-        return ResponseEntity.ok(summaryService.summarise(req));
-    }
+    // /summarise was moved to conversation-summary-service. ai-conv is the
+    // live LLM gateway; post-call analytics live in their own service.
 
     @GetMapping("/conversations/{conversationId}")
     public ResponseEntity<SessionInfoResponse> conversation(@PathVariable String conversationId) {

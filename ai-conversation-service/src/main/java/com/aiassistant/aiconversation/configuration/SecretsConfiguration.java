@@ -14,6 +14,14 @@ public class SecretsConfiguration {
     private Jwt jwt;
     private AuthService authService;
     private Llm llm;
+    private Datasource datasource;
+
+    @Data
+    public static class Datasource {
+        private String username;
+        private String password;
+        private String driverClassName;
+    }
 
     @Data
     public static class Jwt {

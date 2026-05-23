@@ -20,7 +20,68 @@ public class ServiceConfiguration {
     private Tts tts;
     private ElevenLabs elevenlabs;
     private Deepgram deepgram;
-    private Telephony telephony;
+    private Filler filler = new Filler();
+    private Silence silence = new Silence();
+
+    @Data
+    public static class Silence {
+        /** Master switch — when false, no nudge or silence-hangup ever fires. */
+        private boolean enabled = true;
+        /** After this many ms of total caller silence, play a gentle nudge
+         *  ("Hello, are you there?"). The clock anchors to the latest of:
+         *  call start, last STT event, or bot finishing speaking. */
+        private long nudgeAfterMs = 12000;
+        /** After this many ms of continued silence (since the nudge),
+         *  give up and terminate the call with a polite goodbye. */
+        private long hangupAfterNudgeMs = 13000;
+        /** Watchdog check interval. Smaller = snappier reactions, more CPU. */
+        private long checkIntervalMs = 2000;
+        /** Nudge prompts — language is picked from session.getLanguage()
+         *  if set, else bilingual fallback. */
+        private String nudgeTextEn = "Hello, are you still there?";
+        private String nudgeTextHi = "Hello, kya aap line par hain?";
+        /** Farewell played right before silence-triggered hangup. */
+        private String farewellTextEn = "It seems the line went quiet. I'll end the call now. Have a great day!";
+        private String farewellTextHi = "Lagta hai line saaf nahi hai. Main call abhi end kar raha hoon. Aapka din shubh ho!";
+    }
+
+    @Data
+    public static class Filler {
+        /** Master switch — when false, no filler audio is ever played. */
+        private boolean enabled = false;
+        /** Filler phrases for English callers. Picked round-robin per call. */
+        private java.util.List<String> phrasesEn = java.util.List.of(
+                "One moment.", "Let me check.", "Sure, one sec.");
+        /** Filler phrases for Hindi/Hinglish callers. */
+        private java.util.List<String> phrasesHi = java.util.List.of(
+                "Ek second.", "Haan ji, dekhta hoon.", "Theek hai, ek minute.");
+        /** Acknowledgement fillers — played when the caller said a STATEMENT
+         *  (not a question). "Let me check" sounds wrong after "I need a
+         *  quote for my warehouse"; "Got it" / "Noted" sound natural. */
+        // Keep these to a single short token. They follow ANY statement
+        // ("I want a quote", "my warehouse is in Pune", "I'll think about
+        // it") and must sound natural without referencing content. Anything
+        // longer ("Got it, noted") starts to feel scripted on the 3rd reuse.
+        private java.util.List<String> ackPhrasesEn = java.util.List.of(
+                "Okay.", "Hmm.", "Right.", "Sure.");
+        private java.util.List<String> ackPhrasesHi = java.util.List.of(
+                "Achha.", "Hmm.", "Theek.", "Haan ji.");
+        /** Don't play a filler if we already played one within this many ms
+         *  — avoids "ek sec... ek sec..." stuttering on short back-to-back
+         *  turns. */
+        private long minGapMs = 4000;
+        /** Wait this many ms after the caller stops speaking before the
+         *  filler audio actually starts. Small natural pause — the bot
+         *  "registers" the question and then says "ek sec…" instead of
+         *  jumping in instantly. ~700-1000 ms feels right; anything more
+         *  and the silence becomes awkward. */
+        private long startDelayMs = 800;
+        /** Don't play a filler for utterances shorter than this. Short
+         *  acks like "yes", "ok", "thanks", "haan" don't need a "let me
+         *  check" — that just adds dead air to a turn the LLM will
+         *  answer in <1 second anyway. */
+        private int minUtteranceChars = 25;
+    }
 
     @Data
     public static class BusinessDb {
@@ -70,11 +131,6 @@ public class ServiceConfiguration {
          *  instead of MESSAGE — ai-conv responds with a canned "please repeat"
          *  reply (no LLM round-trip). */
         private Double confidenceThreshold = 0.5;
-        /** Pause STT input while the bot is speaking — prevents echo/self-hearing. */
-        private boolean muteWhileBotSpeaking = true;
-        /** Minimum length (chars) of an interim transcript before it may
-         *  trigger barge-in. Final transcripts always qualify regardless. */
-        private int bargeInMinLengthChars = 12;
     }
 
     @Data
@@ -89,18 +145,16 @@ public class ServiceConfiguration {
         /** Force end-of-turn after this many ms of silence (default Deepgram
          *  value is 5000; we want faster commit). */
         private Integer sttEotTimeoutMs = 400;
+        /** Nova model id used when {@code configs.stt.provider=deepgram-nova},
+         *  e.g. {@code nova-3-general}. */
+        private String novaModelId = "nova-3-general";
+        /** Nova language code or {@code multi} for code-switching. */
+        private String novaLanguage = "multi";
+        /** Server-side silence (ms) that triggers a final commit on Nova.
+         *  Smaller = snappier but riskier for mid-sentence pauses. */
+        private Integer novaEndpointingMs = 400;
     }
 
-    @Data
-    public static class Telephony {
-        /** Extra tail time (ms) appended to the estimated playback duration when
-         *  hanging up the call. Ensures the farewell sentence finishes in the
-         *  caller's ear before Twilio drops. */
-        private long hangupTailMs = 500;
-        /** Minimum playback duration to schedule after a TTS turn — protects
-         *  against tiny one-word replies where bytes/8 is too short. */
-        private long minPlaybackMs = 200;
-    }
 
     @Data
     public static class ElevenLabs {
@@ -115,6 +169,15 @@ public class ServiceConfiguration {
          *  of silence (no incoming partial transcript). Default ~400 ms keeps
          *  perceived latency low. */
         private Long sttManualCommitSilenceMs;
+        /** With {@code sttCommitStrategy=vad}, ElevenLabs auto-commits when
+         *  it detects this many seconds of silence after speech. Default 1.5.
+         *  Lower = snappier turn-taking, but risks chopping mid-sentence
+         *  pauses. */
+        private Double sttVadSilenceThresholdSecs;
+        /** VAD speech-detection threshold, 0–1. Lower = more sensitive
+         *  (catches softer speech, but also more background noise).
+         *  Default 0.4. */
+        private Double sttVadThreshold;
 
         private String ttsBaseUrl;
         private String ttsVoiceId;

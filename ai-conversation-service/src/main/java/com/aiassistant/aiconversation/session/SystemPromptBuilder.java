@@ -38,10 +38,17 @@ public class SystemPromptBuilder {
 
     public static final String CALLBACK_NEEDED = "CALLBACK_NEEDED";
     public static final String HANGUP = "HANGUP";
+    /** Emitted when the model decides the caller's current message is a
+     *  near-duplicate of one already answered in the last 1–2 turns
+     *  (caller likely re-asked because of perceived latency). ai-conv
+     *  intercepts and suppresses the reply so the same answer doesn't
+     *  play twice. */
+    public static final String DUPLICATE = "DUPLICATE";
 
     private static final String CLASSPATH_DEFAULT = "prompts/system-prompt.txt";
     private static final String PH_CALLBACK = "{CALLBACK}";
     private static final String PH_HANGUP = "{HANGUP}";
+    private static final String PH_DUPLICATE = "{DUPLICATE}";
     private static final String PH_KNOWLEDGE = "{KNOWLEDGE}";
 
     private final ServiceConfiguration serviceConfiguration;
@@ -76,6 +83,7 @@ public class SystemPromptBuilder {
         return template
                 .replace(PH_CALLBACK, CALLBACK_NEEDED)
                 .replace(PH_HANGUP, HANGUP)
+                .replace(PH_DUPLICATE, DUPLICATE)
                 .replace(PH_KNOWLEDGE, safe);
     }
 }

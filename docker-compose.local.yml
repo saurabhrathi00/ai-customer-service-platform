@@ -89,6 +89,15 @@ services:
       - ./ai-conversation-service/configs/service.properties:/etc/service.properties:ro
       - ./ai-conversation-service/secrets/secrets.properties:/etc/secrets.properties:ro
 
+  conversation-summary-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_CALLORCHESTRATIONSERVICE_BASEURL: http://call-orchestration-service:8086/call-orchestration-service
+    volumes:
+      - ./conversation-summary-service/configs/service.properties:/etc/service.properties:ro
+      - ./conversation-summary-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
   call-orchestration-service:
     environment:
       <<: *spring-config
@@ -97,6 +106,7 @@ services:
       CONFIGS_KNOWLEDGESERVICE_BASEURL: http://knowledge-service:8083/knowledge-service
       CONFIGS_AICONVERSATIONSERVICE_BASEURL: http://ai-conversation-service:8087/ai-conversation-service
       CONFIGS_AICONVERSATIONSERVICE_WSBASEURL: ws://ai-conversation-service:8087/ai-conversation-service/ws/conversation
+      CONFIGS_CONVERSATIONSUMMARYSERVICE_BASEURL: http://conversation-summary-service:8089/conversation-summary-service
     volumes:
       - ./call-orchestration-service/configs/service.properties:/etc/service.properties:ro
       - ./call-orchestration-service/secrets/secrets.properties:/etc/secrets.properties:ro

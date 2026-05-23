@@ -53,20 +53,28 @@ public class PostCallOrchestrator {
         log.info("Call finalized callId={} conversationId={} callLogId={}",
                 session.getCallId(), session.getConversationId(), callLog.getId());
 
-        triggerSummary(callLog);
+        triggerSummary(session, callLog);
         triggerCallbackNotification(callLog);
 
         callSessionRegistry.remove(session.getCallId());
         return callLog;
     }
 
+    /**
+     * Fire a lightweight trigger to conversation-summary-service. The
+     * summary service acknowledges with 202, then fetches the transcript
+     * back via {@code GET /api/internal/calls/{callLogId}/transcript},
+     * runs the LLM, and writes its own {@code call_summaries} row. We do
+     * NOT block on the summary itself — this hop is just "go do it".
+     */
     @Async("postCallExecutor")
-    public void triggerSummary(CallLogEntity callLog) {
+    public void triggerSummary(CallSession session, CallLogEntity callLog) {
         try {
-            log.info("Triggering async summary for callId={}", callLog.getId());
-            summaryClient.requestSummary(callLog.getBusinessId(), callLog.getId(), callLog.getTranscript());
+            log.info("Triggering async summary for callLogId={}", callLog.getId());
+            summaryClient.trigger(callLog.getId());
         } catch (Exception ex) {
-            log.error("Failed to trigger summary for callId={}: {}", callLog.getId(), ex.getMessage(), ex);
+            log.error("Failed to trigger summary for callLogId={}: {}",
+                    callLog.getId(), ex.getMessage(), ex);
         }
     }
 

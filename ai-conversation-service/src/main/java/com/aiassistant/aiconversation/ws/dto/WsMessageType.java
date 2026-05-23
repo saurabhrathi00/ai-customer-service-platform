@@ -9,6 +9,11 @@ public enum WsMessageType {
      *  in the caller's language. After N consecutive UNCLEAR_MESSAGEs,
      *  escalate to {@link #CALLBACK_NEEDED}. */
     UNCLEAR_MESSAGE,
+    /** Caller interrupted the bot mid-reply — cancel the in-flight LLM turn
+     *  immediately and discard whatever partial response has been generated
+     *  so the model doesn't think it spoke it. The next {@code MESSAGE} that
+     *  arrives carries the interrupting utterance. */
+    BARGE_IN,
     END,
 
     // Outbound (ai-conversation → call-orchestration)

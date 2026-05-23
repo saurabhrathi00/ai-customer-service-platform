@@ -58,6 +58,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
     private final LlmProviderRegistry providerRegistry;
     private final ServiceConfiguration serviceConfiguration;
     private final SystemPromptBuilder promptBuilder;
+    private final com.aiassistant.aiconversation.services.ConversationHistoryService historyService;
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession ws) {
@@ -81,6 +82,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
             case INIT -> handleInit(ws, frame);
             case MESSAGE -> handleMessage(ws, frame);
             case UNCLEAR_MESSAGE -> handleUnclearMessage(ws, frame);
+            case BARGE_IN -> handleBargeIn(ws, frame);
             case END -> ws.close(CloseStatus.NORMAL);
             default -> sendError(ws, frame.getConversationId(),
                     "BAD_FRAME", "Unsupported inbound type: " + frame.getType());
@@ -178,6 +180,40 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .build());
     }
 
+    // ─── BARGE_IN ────────────────────────────────────────────────────────
+
+    /**
+     * Caller cut in while the bot was speaking. Cancel the in-flight LLM
+     * subscription so Gemini stops generating tokens for an abandoned
+     * question, and clear the active-turn marker so any tail deltas that
+     * arrive between dispose() and the upstream HTTP close are treated as
+     * superseded and skipped (no append to history).
+     */
+    private void handleBargeIn(WebSocketSession ws, InboundFrame frame) {
+        String conversationId = resolveConversationId(ws, frame);
+        if (conversationId == null) return;
+        ConversationSession session = sessionRegistry.get(conversationId);
+        if (session == null) return;
+
+        reactor.core.Disposable prev = session.getCurrentTurn().getAndSet(null);
+        // Null out the active turn id so the dispose-vs-finally race doesn't
+        // append a half-formed reply to history.
+        session.setCurrentTurnMessageId(null);
+        if (prev != null && !prev.isDisposed()) {
+            log.info("[barge-in] cancelling in-flight turn conversationId={}", conversationId);
+            prev.dispose();
+        } else {
+            log.info("[barge-in] no in-flight turn to cancel conversationId={}", conversationId);
+        }
+        // Drop the unanswered user message from history. Without this the
+        // model sees a stale question on the next turn and tries to answer
+        // it on top of the new one — bot ends up "still answering the old
+        // question" even after the caller has moved on.
+        if (session.popLastIfUser()) {
+            log.info("[barge-in] popped unanswered user message conversationId={}", conversationId);
+        }
+    }
+
     // ─── MESSAGE ─────────────────────────────────────────────────────────
 
     private void handleMessage(WebSocketSession ws, InboundFrame frame) throws IOException {
@@ -249,6 +285,18 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         long turnStart = System.currentTimeMillis();
         log.info("[latency] conversationId={} stage=turn-start chars={}",
                 session.getConversationId(), userText == null ? 0 : userText.length());
+
+        // Cancel any previous in-flight turn for this session. Disposing the
+        // Reactor subscription propagates cancellation upstream so the Gemini
+        // HTTP stream stops generating tokens for the abandoned question.
+        reactor.core.Disposable prev = session.getCurrentTurn().getAndSet(null);
+        if (prev != null && !prev.isDisposed()) {
+            log.info("[turn-cancel] conversationId={} superseded by replyTo={}",
+                    session.getConversationId(), replyToMessageId);
+            prev.dispose();
+        }
+        session.setCurrentTurnMessageId(replyToMessageId);
+
         session.appendUser(userText);
         session.resetUnclearStreak();
 
@@ -265,51 +313,77 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 session.getConversationId(), llmStart - turnStart,
                 req.getMessages() == null ? 0 : req.getMessages().size());
 
-        // Streaming LLM call. We buffer the first ~20 chars of text so we can
-        // detect the {@code CALLBACK_NEEDED} sentinel before forwarding any
-        // delta to call-orch — the sentinel must never leak to TTS. Once we
-        // know it isn't a callback, all subsequent text is forwarded as
-        // RESPONSE_DELTA frames as soon as it arrives.
         TurnState state = new TurnState(replyToMessageId);
         long[] firstDeltaAt = {-1};
 
-        try {
-            reactor.core.publisher.Flux<LlmDelta> stream = reactor.core.publisher.Flux
-                    .from(session.getProvider().streamReply(req));
+        // Async, cancellable subscription. The Tomcat NIO thread returns
+        // immediately so the next inbound MESSAGE can be read and supersede
+        // this turn if the caller starts speaking again.
+        reactor.core.Disposable sub = reactor.core.publisher.Flux
+                .from(session.getProvider().streamReply(req))
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .subscribe(
+                        delta -> {
+                            if (isSuperseded(session, replyToMessageId)) return;
+                            if (firstDeltaAt[0] < 0) {
+                                firstDeltaAt[0] = System.currentTimeMillis();
+                                log.info("[latency] conversationId={} stage=llm-first-token ms={}",
+                                        session.getConversationId(), firstDeltaAt[0] - llmStart);
+                            }
+                            emitDelta(ws, session, state, delta);
+                        },
+                        err -> {
+                            if (isSuperseded(session, replyToMessageId)) return;
+                            if (err instanceof LlmException le) {
+                                log.warn("LLM stream failed conversationId={} code={} msg={}",
+                                        session.getConversationId(), le.getCode(), le.getMessage());
+                                sendErrorQuiet(ws, session.getConversationId(), le.getCode(), le.getMessage());
+                            } else {
+                                log.warn("LLM stream failed conversationId={}: {}",
+                                        session.getConversationId(), err.getMessage());
+                                sendErrorQuiet(ws, session.getConversationId(), "LLM_TRANSIENT", err.getMessage());
+                            }
+                        },
+                        () -> {
+                            if (isSuperseded(session, replyToMessageId)) {
+                                log.info("[turn-cancel] conversationId={} discarding reply for superseded replyTo={}",
+                                        session.getConversationId(), replyToMessageId);
+                                return;
+                            }
+                            log.info("[latency] conversationId={} stage=llm-total ms={} firstTokenMs={}",
+                                    session.getConversationId(),
+                                    System.currentTimeMillis() - llmStart,
+                                    firstDeltaAt[0] < 0 ? -1 : firstDeltaAt[0] - llmStart);
+                            try { finishTurn(ws, session, state); }
+                            catch (IOException io) {
+                                log.warn("finishTurn failed conversationId={}: {}",
+                                        session.getConversationId(), io.getMessage());
+                            }
+                        }
+                );
 
-            // Blocking subscribe — this handler thread waits on the stream and
-            // pushes WS frames inline. Per-turn ordering is preserved.
-            stream.toIterable().forEach(delta -> {
-                if (firstDeltaAt[0] < 0) {
-                    firstDeltaAt[0] = System.currentTimeMillis();
-                    log.info("[latency] conversationId={} stage=llm-first-token ms={}",
-                            session.getConversationId(), firstDeltaAt[0] - llmStart);
-                }
-                emitDelta(ws, session, state, delta);
-            });
-            log.info("[latency] conversationId={} stage=llm-total ms={} firstTokenMs={}",
-                    session.getConversationId(),
-                    System.currentTimeMillis() - llmStart,
-                    firstDeltaAt[0] < 0 ? -1 : firstDeltaAt[0] - llmStart);
+        session.getCurrentTurn().set(sub);
+    }
 
-        } catch (LlmException e) {
-            log.warn("LLM stream failed conversationId={} code={} msg={}",
-                    session.getConversationId(), e.getCode(), e.getMessage());
-            sendErrorQuiet(ws, session.getConversationId(), e.getCode(), e.getMessage());
-            return;
-        } catch (Exception e) {
-            log.warn("LLM stream failed conversationId={}: {}", session.getConversationId(), e.getMessage());
-            sendErrorQuiet(ws, session.getConversationId(), "LLM_TRANSIENT", e.getMessage());
-            return;
-        }
-
-        finishTurn(ws, session, state);
+    /** A turn is superseded once a newer MESSAGE has overwritten the session's
+     *  currentTurnMessageId. Superseded turns must not emit deltas, must not
+     *  finalize, and must not append to history — otherwise the model's memory
+     *  thinks it answered something the caller already moved past. */
+    private boolean isSuperseded(ConversationSession session, String replyToMessageId) {
+        String active = session.getCurrentTurnMessageId();
+        return active != null && !active.equals(replyToMessageId);
     }
 
     /** Per-turn streaming state: accumulator, callback detection, last usage. */
     private static final class TurnState {
         final String replyToMessageId;
         final StringBuilder acc = new StringBuilder();
+        /** Captures spoken text AFTER a mid-stream sentinel pipe. The model
+         *  is supposed to emit "HANGUP|farewell" as the entire reply, but
+         *  sometimes emits "ack text.HANGUP|farewell" instead — in that
+         *  case we strip the leading ack from {@code acc} and route the
+         *  trailing farewell text here so {@code finishTurn} can speak it. */
+        final StringBuilder sentinelSpokenAcc = new StringBuilder();
         /** Sentinel state: UNKNOWN (still buffering), NORMAL, CALLBACK. */
         Mode mode = Mode.UNKNOWN;
         /** Once we know it's a normal reply, this is how much of {@code acc} we have already forwarded. */
@@ -321,17 +395,22 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         TurnState(String replyToMessageId) { this.replyToMessageId = replyToMessageId; }
     }
 
-    private enum Mode { UNKNOWN, NORMAL, CALLBACK, HANGUP }
+    private enum Mode { UNKNOWN, NORMAL, CALLBACK, HANGUP, DUPLICATE }
 
     /** Sentinels the LLM may emit at the very start of a reply. The longest
-     *  one bounds how many chars we must buffer before classifying. */
+     *  one bounds how many chars we must buffer before classifying. The
+     *  {@code DUPLICATE} sentinel has no trailing pipe — it's the entire
+     *  output when the model decides the caller re-asked something already
+     *  answered. */
     private static final String[] SENTINELS = {
             SystemPromptBuilder.CALLBACK_NEEDED + "|",
-            SystemPromptBuilder.HANGUP + "|"
+            SystemPromptBuilder.HANGUP + "|",
+            SystemPromptBuilder.DUPLICATE
     };
-    private static final int MAX_SENTINEL_LEN = Math.max(
+    private static final int MAX_SENTINEL_LEN = Math.max(Math.max(
             SystemPromptBuilder.CALLBACK_NEEDED.length() + 1,
-            SystemPromptBuilder.HANGUP.length() + 1);
+            SystemPromptBuilder.HANGUP.length() + 1),
+            SystemPromptBuilder.DUPLICATE.length());
 
     private void emitDelta(WebSocketSession ws, ConversationSession session,
                            TurnState state, LlmDelta delta) {
@@ -339,13 +418,55 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         if (delta.getFinishReason() != null) state.finishReason = delta.getFinishReason();
 
         String chunk = delta.getText();
-        if (chunk != null && !chunk.isEmpty()) {
-            state.acc.append(chunk);
-            try {
-                forwardOrBuffer(ws, session, state);
-            } catch (IOException io) {
-                throw new RuntimeException(io);
-            }
+        if (chunk == null || chunk.isEmpty()) return;
+
+        // Once a mid-stream sentinel has switched us to HANGUP/CALLBACK,
+        // every subsequent token is the spoken farewell — keep it out of
+        // the normal accumulator (which is already truncated) so nothing
+        // else gets TTS'd.
+        if (state.mode == Mode.HANGUP || state.mode == Mode.CALLBACK) {
+            state.sentinelSpokenAcc.append(chunk);
+            return;
+        }
+
+        state.acc.append(chunk);
+
+        // Mid-stream sentinel guard. Model sometimes emits "ack.HANGUP|bye"
+        // instead of just "HANGUP|bye" — without this check we'd happily
+        // stream the literal word "HANGUP" to TTS.
+        int hangIdx = state.acc.indexOf(SystemPromptBuilder.HANGUP + "|");
+        int callIdx = state.acc.indexOf(SystemPromptBuilder.CALLBACK_NEEDED + "|");
+        int idx; Mode newMode;
+        if (hangIdx >= 0 && (callIdx < 0 || hangIdx < callIdx)) {
+            idx = hangIdx; newMode = Mode.HANGUP;
+        } else if (callIdx >= 0) {
+            idx = callIdx; newMode = Mode.CALLBACK;
+        } else {
+            idx = -1; newMode = null;
+        }
+
+        if (idx >= 0 && (state.mode == Mode.NORMAL || state.mode == Mode.UNKNOWN)) {
+            int pipeIdx = state.acc.indexOf("|", idx);
+            String tail = (pipeIdx > 0 && pipeIdx + 1 < state.acc.length())
+                    ? state.acc.substring(pipeIdx + 1) : "";
+            state.sentinelSpokenAcc.append(tail);
+            // Strip the sentinel + everything after from the live accumulator.
+            // We deliberately also drop any unflushed pre-sentinel text — it
+            // was the model's "preamble" that it then decided to follow with
+            // the hangup, so speaking half of it would be incoherent. Already-
+            // flushed prefix can't be unsent, but that's fine; the farewell
+            // we play in HANGUP mode bridges naturally.
+            state.acc.setLength(Math.min(state.forwardedUpto, idx));
+            state.mode = newMode;
+            log.info("[sentinel] mid-stream {} detected conversationId={} idxInAcc={}",
+                    newMode, session.getConversationId(), idx);
+            return;
+        }
+
+        try {
+            forwardOrBuffer(ws, session, state);
+        } catch (IOException io) {
+            throw new RuntimeException(io);
         }
     }
 
@@ -364,6 +485,10 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 state.mode = Mode.HANGUP;
                 return;
             }
+            if (head.startsWith(SystemPromptBuilder.DUPLICATE)) {
+                state.mode = Mode.DUPLICATE;
+                return;
+            }
             boolean stillPossible = false;
             for (String s : SENTINELS) {
                 if (s.startsWith(head)) { stillPossible = true; break; }
@@ -378,20 +503,79 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         if (state.mode == Mode.NORMAL) {
             flushNormalDeltas(ws, session, state);
         }
-        // CALLBACK / HANGUP: buffer silently until done.
+        // CALLBACK / HANGUP / DUPLICATE: buffer silently until done.
     }
 
     private void flushNormalDeltas(WebSocketSession ws, ConversationSession session,
                                    TurnState state) throws IOException {
-        if (state.forwardedUpto < state.acc.length()) {
-            String chunk = state.acc.substring(state.forwardedUpto);
-            state.forwardedUpto = state.acc.length();
+        flushNormalDeltas(ws, session, state, false);
+    }
+
+    /**
+     * Emit accumulated text in sentence-shaped chunks. Break points are
+     * sentence-terminal punctuation only: {@code . ! ? \n \r ।} — included
+     * at the end of the chunk that precedes them.
+     *
+     * <p>Earlier this also broke at commas / colons / conjunctions to
+     * minimise first-audio latency, but the downstream TTS (one HTTP
+     * request per chunk, fired on a parallel executor in call-orch)
+     * delivered chunks out of order and reset prosody every fragment —
+     * making replies sound choppy. Sentence-level chunks are the sweet
+     * spot: still streaming, but each piece is a self-contained prosodic
+     * unit so playback is smooth.
+     *
+     * <p>Mid-stream we only emit up to the latest complete sentence
+     * boundary so we never speak a half-word. On {@code finalFlush=true}
+     * the tail is emitted regardless.
+     */
+    private void flushNormalDeltas(WebSocketSession ws, ConversationSession session,
+                                   TurnState state, boolean finalFlush) throws IOException {
+        int len = state.acc.length();
+        if (state.forwardedUpto >= len) return;
+
+        int emitUpto = finalFlush ? len : lastCompleteBoundary(state.acc, state.forwardedUpto, len);
+        if (emitUpto <= state.forwardedUpto) return;
+
+        String segment = state.acc.substring(state.forwardedUpto, emitUpto);
+        state.forwardedUpto = emitUpto;
+
+        for (String piece : splitIntoChunks(segment)) {
+            String trimmed = piece.strip();
+            if (trimmed.isEmpty()) continue;
             send(ws, OutboundFrames.ResponseDelta.builder()
                     .conversationId(session.getConversationId())
                     .replyToMessageId(state.replyToMessageId)
-                    .text(chunk)
+                    .text(trimmed)
                     .build());
         }
+    }
+
+    private static boolean isSentenceEnd(char c) {
+        return c == '.' || c == '!' || c == '?' || c == '\n' || c == '\r' || c == '।';
+    }
+
+    /** Latest mid-stream sentence boundary in [from, to). Returns the
+     *  exclusive end index of the chunk that can be safely emitted now,
+     *  or {@code from} if none. */
+    private static int lastCompleteBoundary(CharSequence s, int from, int to) {
+        for (int i = to - 1; i >= from; i--) {
+            if (isSentenceEnd(s.charAt(i))) return i + 1;
+        }
+        return from;
+    }
+
+    private static java.util.List<String> splitIntoChunks(String s) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        int start = 0;
+        int len = s.length();
+        for (int i = 0; i < len; i++) {
+            if (isSentenceEnd(s.charAt(i))) {
+                out.add(s.substring(start, i + 1));
+                start = i + 1;
+            }
+        }
+        if (start < len) out.add(s.substring(start));
+        return out;
     }
 
     private void finishTurn(WebSocketSession ws, ConversationSession session,
@@ -406,7 +590,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // emit the appropriate signalling frame instead of RESPONSE_DONE.
         if (state.mode == Mode.CALLBACK
                 || (state.mode == Mode.UNKNOWN && full.startsWith(SystemPromptBuilder.CALLBACK_NEEDED + "|"))) {
-            String spoken = extractSpoken(full);
+            String spoken = pickSpoken(state, full);
             if (!spoken.isEmpty()) session.appendAssistant(spoken);
             send(ws, OutboundFrames.CallbackNeeded.builder()
                     .conversationId(session.getConversationId())
@@ -418,7 +602,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         }
         if (state.mode == Mode.HANGUP
                 || (state.mode == Mode.UNKNOWN && full.startsWith(SystemPromptBuilder.HANGUP + "|"))) {
-            String spoken = extractSpoken(full);
+            String spoken = pickSpoken(state, full);
             if (!spoken.isEmpty()) session.appendAssistant(spoken);
             send(ws, OutboundFrames.Hangup.builder()
                     .conversationId(session.getConversationId())
@@ -428,10 +612,27 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                     .build());
             return;
         }
+        // Duplicate detection — caller re-asked something already answered.
+        // Suppress audio entirely (no text to call-orch) but emit a
+        // RESPONSE_DONE with finishReason=DUPLICATE so call-orch's per-turn
+        // bookkeeping closes cleanly. We also do NOT appendAssistant since
+        // no spoken text was produced.
+        if (state.mode == Mode.DUPLICATE
+                || (state.mode == Mode.UNKNOWN && full.startsWith(SystemPromptBuilder.DUPLICATE))) {
+            log.info("[duplicate] suppressed reply conversationId={} replyTo={} (caller re-asked)",
+                    session.getConversationId(), state.replyToMessageId);
+            send(ws, OutboundFrames.ResponseDone.builder()
+                    .conversationId(session.getConversationId())
+                    .replyToMessageId(state.replyToMessageId)
+                    .finishReason("DUPLICATE")
+                    .usage(state.lastUsage)
+                    .build());
+            return;
+        }
 
         // Normal reply — make sure anything still buffered is forwarded.
         if (state.mode == Mode.UNKNOWN) state.mode = Mode.NORMAL;
-        flushNormalDeltas(ws, session, state);
+        flushNormalDeltas(ws, session, state, true);
         session.appendAssistant(full);
         send(ws, OutboundFrames.ResponseDone.builder()
                 .conversationId(session.getConversationId())
@@ -439,6 +640,17 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .finishReason(state.finishReason)
                 .usage(state.lastUsage)
                 .build());
+    }
+
+    /** Prefer the mid-stream sentinel buffer (set when HANGUP/CALLBACK
+     *  appeared inside a normal-looking reply) over parsing the full text.
+     *  Falls back to the classic {@link #extractSpoken} for the well-formed
+     *  case where the sentinel was the very first token. */
+    private static String pickSpoken(TurnState state, String full) {
+        if (state.sentinelSpokenAcc.length() > 0) {
+            return state.sentinelSpokenAcc.toString().trim();
+        }
+        return extractSpoken(full);
     }
 
     private static String extractSpoken(String full) {
@@ -460,9 +672,19 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(@NonNull WebSocketSession ws, @NonNull CloseStatus status) {
         String conversationId = (String) ws.getAttributes().get(ATTR_CONVERSATION_ID);
-        if (conversationId != null) {
-            sessionRegistry.remove(conversationId);
+        if (conversationId == null) return;
+
+        // Persist BEFORE we drop the session from the registry — once the
+        // entry is gone we can't recover the message list to write.
+        ConversationSession session = sessionRegistry.get(conversationId);
+        if (session != null) {
+            try { historyService.persistOnClose(session); }
+            catch (Exception ex) {
+                log.warn("history persistence failed conversationId={}: {}",
+                        conversationId, ex.getMessage());
+            }
         }
+        sessionRegistry.remove(conversationId);
     }
 
     private String resolveConversationId(WebSocketSession ws, InboundFrame frame) {
