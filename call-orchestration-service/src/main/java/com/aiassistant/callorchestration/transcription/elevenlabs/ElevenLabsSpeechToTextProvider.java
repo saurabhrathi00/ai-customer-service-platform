@@ -321,14 +321,14 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                                     state.lastPartialAtMs = System.currentTimeMillis();
                                     state.lastPartialText = text;
                                     state.hasUncommittedPartial.set(true);
-                                    log.info("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
+                                    log.debug("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
                                             callId, conf, text);
                                 } else {
                                     log.debug("[stt] PARTIAL-KEEPALIVE callId={} text unchanged",
                                             callId);
                                 }
                             } else {
-                                log.info("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
+                                log.debug("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
                                         callId, conf, text);
                             }
                             sink.accept(new TranscriptEvent(text, false, conf));
@@ -343,18 +343,18 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                             state.lastPartialText = "";
                         }
                         if (text.isBlank()) {
-                            log.info("[stt] FINAL-EMPTY callId={} type={}", callId, messageType);
+                            log.debug("[stt] FINAL-EMPTY callId={} type={}", callId, messageType);
                             break;
                         }
                         long now = System.currentTimeMillis();
                         if (text.equals(lastFinalText) && (now - lastFinalAtMs) < DEDUPE_WINDOW_MS) {
-                            log.info("[stt] FINAL-DEDUPE callId={} type={} sinceLast={}ms text=\"{}\"",
+                            log.debug("[stt] FINAL-DEDUPE callId={} type={} sinceLast={}ms text=\"{}\"",
                                     callId, messageType, now - lastFinalAtMs, text);
                             break;
                         }
                         lastFinalText = text;
                         lastFinalAtMs = now;
-                        log.info("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
+                        log.debug("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
                                 callId, conf, messageType, text);
                         sink.accept(new TranscriptEvent(text, true, conf));
                     }

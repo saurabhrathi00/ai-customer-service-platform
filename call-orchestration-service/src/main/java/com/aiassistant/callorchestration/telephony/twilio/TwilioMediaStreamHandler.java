@@ -570,7 +570,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 queueChainedFiller(sttText, clip);
             } else {
                 long delay = fillerAudioCache.getStartDelayMs();
-                log.info("[filler] ack queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
+                log.debug("[filler] ack queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
                         session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
                         FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
                 queueRawAudio(clip, "ack", delay, /*countAsBotSpeaking=*/false);
@@ -585,7 +585,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void queueChainedFiller(String sttText, byte[] clip) {
             int idx = fillerChainCount.incrementAndGet();
             long delay = (idx == 1) ? fillerAudioCache.getStartDelayMs() : FILLER_CHAIN_GAP_MS;
-            log.info("[filler] chain={} queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
+            log.debug("[filler] chain={} queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
                     idx, session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
                     FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
             // Filler is a "thinking sound" — it should NOT count as interruptible
@@ -734,17 +734,17 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             }
 
             long epochAtSubmit = session.getTtsEpoch().get();
-            log.info("[tts] QUEUE callId={} epoch={} chars={} text=\"{}\"",
+            log.debug("[tts] QUEUE callId={} epoch={} chars={} text=\"{}\"",
                     callId, epochAtSubmit, text.length(),
                     text.length() > 80 ? text.substring(0, 80) + "…" : text);
 
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
                 if (!ws.isOpen()) {
-                    log.info("[tts] SKIP callId={} epoch={} reason=ws-closed", callId, epochAtSubmit);
+                    log.debug("[tts] SKIP callId={} epoch={} reason=ws-closed", callId, epochAtSubmit);
                     return;
                 }
                 if (session.getTtsEpoch().get() != epochAtSubmit) {
-                    log.info("[tts] SKIP callId={} epoch={} reason=epoch-bumped-pre (now={})",
+                    log.debug("[tts] SKIP callId={} epoch={} reason=epoch-bumped-pre (now={})",
                             callId, epochAtSubmit, session.getTtsEpoch().get());
                     return;
                 }
@@ -762,7 +762,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 int[] totalBytes = {0};
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
-                    log.info("[tts] START callId={} epoch={} (calling ElevenLabs)", callId, epochAtSubmit);
+                    log.debug("[tts] START callId={} epoch={} (calling ElevenLabs)", callId, epochAtSubmit);
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
@@ -773,10 +773,10 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                 totalBytes[0] += chunk.length;
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
-                    log.info("[tts] DONE  callId={} epoch={} bytes={} totalMs={}",
+                    log.debug("[tts] DONE  callId={} epoch={} bytes={} totalMs={}",
                             callId, epochAtSubmit, totalBytes[0], System.currentTimeMillis() - start);
                 } catch (BargeInAbortException bx) {
-                    log.info("[tts] ABORT callId={} epoch={} bytes={} reason=barge-in",
+                    log.debug("[tts] ABORT callId={} epoch={} bytes={} reason=barge-in",
                             callId, epochAtSubmit, totalBytes[0]);
                 } catch (Exception ex) {
                     log.warn("[tts] FAIL  callId={} epoch={} bytes={} reason={}",

@@ -186,7 +186,7 @@ public class ConversationCoordinator {
      */
     public void onCustomerUtterance(String callId, String text, boolean clear) {
         if (text == null || text.isBlank()) {
-            log.info("[stt] empty final dropped callId={} clear={}", callId, clear);
+            log.debug("[stt] empty final dropped callId={} clear={}", callId, clear);
             return;
         }
         CallSession session = callSessionRegistry.get(callId).orElse(null);
@@ -198,7 +198,7 @@ public class ConversationCoordinator {
         // is about to drop. Drop any STT finals that arrive in this window
         // so we don't queue another LLM turn / another farewell.
         if (session.getEndingCall().get()) {
-            log.info("[stt] dropped — call ending callId={} text=\"{}\"", callId, text);
+            log.debug("[stt] dropped — call ending callId={} text=\"{}\"", callId, text);
             return;
         }
 
@@ -210,8 +210,8 @@ public class ConversationCoordinator {
             session.getTranscript().add(CallSession.TranscriptEntry.builder()
                     .speaker("customer").text(text).timestamp(Instant.now()).build());
             session.setActiveMessageId(messageId);
-            log.info("[conv] callId={} CUSTOMER (unclear) → \"{}\"", callId, text);
-            log.info("[ai-req] callId={} msgId={} UNCLEAR_MESSAGE sent to ai-conv", callId, messageId);
+            log.debug("[conv] callId={} CUSTOMER (unclear) → \"{}\"", callId, text);
+            log.debug("[ai-req] callId={} msgId={} UNCLEAR_MESSAGE sent to ai-conv", callId, messageId);
             wsClient.sendUnclearMessage(session.getConversationId(), messageId);
             return;
         }
@@ -229,7 +229,7 @@ public class ConversationCoordinator {
             if (buf.length() > 0 && !endsWithSpace(buf)) buf.append(' ');
             buf.append(text);
         }
-        log.info("[stt] FINAL-BUFFERED callId={} bufLen={} chunk=\"{}\"",
+        log.debug("[stt] FINAL-BUFFERED callId={} bufLen={} chunk=\"{}\"",
                 session.getCallId(), buf.length(), text);
 
         java.util.concurrent.ScheduledFuture<?> prev = session.getPendingUtteranceFlush();
@@ -250,7 +250,7 @@ public class ConversationCoordinator {
         session.setPendingUtteranceFlush(null);
         if (full.isEmpty()) return;
         if (session.getEndingCall().get()) {
-            log.info("[stt] flush dropped — call ending callId={} text=\"{}\"",
+            log.debug("[stt] flush dropped — call ending callId={} text=\"{}\"",
                     session.getCallId(), full);
             return;
         }
@@ -258,8 +258,8 @@ public class ConversationCoordinator {
         session.getTranscript().add(CallSession.TranscriptEntry.builder()
                 .speaker("customer").text(full).timestamp(Instant.now()).build());
         session.setActiveMessageId(messageId);
-        log.info("[conv] callId={} CUSTOMER → \"{}\"", session.getCallId(), full);
-        log.info("[ai-req] callId={} msgId={} MESSAGE sent to ai-conv (debounced)",
+        log.debug("[conv] callId={} CUSTOMER → \"{}\"", session.getCallId(), full);
+        log.debug("[ai-req] callId={} msgId={} MESSAGE sent to ai-conv (debounced)",
                 session.getCallId(), messageId);
         sendUserMessageWithReadinessWait(session.getConversationId(), messageId, full,
                 session.getCallId());
@@ -397,13 +397,12 @@ public class ConversationCoordinator {
         public void onResponse(String conversationId, String replyToMessageId, String text) {
             CallSession session = callSessionRegistry.get(callId).orElse(null);
             if (session != null && isStaleTurn(session, replyToMessageId)) {
-                log.info("[ai-resp] STALE-RESPONSE callId={} replyTo={} active={} text=\"{}\"",
+                log.debug("[ai-resp] STALE-RESPONSE callId={} replyTo={} active={} text=\"{}\"",
                         callId, replyToMessageId, session.getActiveMessageId(), text);
                 return;
             }
-            log.info("[ai-resp] RESPONSE callId={} replyTo={} text=\"{}\"",
+            log.debug("[ai-resp] RESPONSE callId={} replyTo={} text=\"{}\"",
                     callId, replyToMessageId, text);
-            log.info("[conv] callId={} ASSISTANT → \"{}\"", callId, text);
             if (session != null) {
                 session.getTranscript().add(CallSession.TranscriptEntry.builder()
                         .speaker("assistant").text(text).timestamp(Instant.now()).build());
@@ -416,11 +415,11 @@ public class ConversationCoordinator {
             if (deltaText == null || deltaText.isEmpty()) return;
             CallSession session = callSessionRegistry.get(callId).orElse(null);
             if (session != null && isStaleTurn(session, replyToMessageId)) {
-                log.info("[ai-resp] STALE-DELTA callId={} replyTo={} active={} text=\"{}\"",
+                log.debug("[ai-resp] STALE-DELTA callId={} replyTo={} active={} text=\"{}\"",
                         callId, replyToMessageId, session.getActiveMessageId(), deltaText);
                 return;
             }
-            log.info("[ai-resp] DELTA callId={} replyTo={} text=\"{}\"",
+            log.debug("[ai-resp] DELTA callId={} replyTo={} text=\"{}\"",
                     callId, replyToMessageId, deltaText);
             streamingAcc.append(deltaText);
             dispatch(l -> l.onAiReplyChunk(callId, deltaText));
@@ -442,14 +441,13 @@ public class ConversationCoordinator {
             streamingAcc.setLength(0);
             CallSession session = callSessionRegistry.get(callId).orElse(null);
             if (session != null && isStaleTurn(session, replyToMessageId)) {
-                log.info("[ai-resp] STALE-DONE callId={} replyTo={} chars={}",
+                log.debug("[ai-resp] STALE-DONE callId={} replyTo={} chars={}",
                         callId, replyToMessageId, full.length());
                 return;
             }
-            log.info("[ai-resp] DONE callId={} replyTo={} finishReason={} totalChars={}",
+            log.debug("[ai-resp] DONE callId={} replyTo={} finishReason={} totalChars={}",
                     callId, replyToMessageId, finishReason, full.length());
             if (!full.isBlank()) {
-                log.info("[conv] callId={} ASSISTANT (full) → \"{}\"", callId, full);
                 if (session != null) {
                     session.getTranscript().add(CallSession.TranscriptEntry.builder()
                             .speaker("assistant").text(full).timestamp(Instant.now()).build());
@@ -474,9 +472,8 @@ public class ConversationCoordinator {
 
         @Override
         public void onCallbackNeeded(String conversationId, String replyToMessageId, String spokenText) {
-            log.info("[ai-resp] CALLBACK_NEEDED callId={} replyTo={} spoken=\"{}\"",
+            log.debug("[ai-resp] CALLBACK_NEEDED callId={} replyTo={} spoken=\"{}\"",
                     callId, replyToMessageId, spokenText);
-            log.info("[conv] callId={} ASSISTANT (callback) → \"{}\"", callId, spokenText);
             CallSession session = callSessionRegistry.get(callId).orElse(null);
             if (session != null) {
                 session.setCallbackRequested(true);

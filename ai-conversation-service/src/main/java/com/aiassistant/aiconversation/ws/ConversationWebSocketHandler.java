@@ -161,7 +161,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
         if (streak >= MAX_CONSECUTIVE_UNCLEAR) {
             if (session != null) session.resetUnclearStreak();
-            log.info("[unclear] conversationId={} streak={} action=HANGUP reply=\"{}\"",
+            log.debug("[unclear] conversationId={} streak={} action=HANGUP reply=\"{}\"",
                     conversationId, streak, UNCLEAR_GIVEUP);
             send(ws, OutboundFrames.Hangup.builder()
                     .conversationId(conversationId)
@@ -171,7 +171,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                     .build());
             return;
         }
-        log.info("[unclear] conversationId={} streak={} action=ASK_REPEAT reply=\"{}\"",
+        log.debug("[unclear] conversationId={} streak={} action=ASK_REPEAT reply=\"{}\"",
                 conversationId, streak, UNCLEAR_REPLY);
         send(ws, OutboundFrames.Response.builder()
                 .conversationId(conversationId)
@@ -200,17 +200,17 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // append a half-formed reply to history.
         session.setCurrentTurnMessageId(null);
         if (prev != null && !prev.isDisposed()) {
-            log.info("[barge-in] cancelling in-flight turn conversationId={}", conversationId);
+            log.debug("[barge-in] cancelling in-flight turn conversationId={}", conversationId);
             prev.dispose();
         } else {
-            log.info("[barge-in] no in-flight turn to cancel conversationId={}", conversationId);
+            log.debug("[barge-in] no in-flight turn to cancel conversationId={}", conversationId);
         }
         // Drop the unanswered user message from history. Without this the
         // model sees a stale question on the next turn and tries to answer
         // it on top of the new one — bot ends up "still answering the old
         // question" even after the caller has moved on.
         if (session.popLastIfUser()) {
-            log.info("[barge-in] popped unanswered user message conversationId={}", conversationId);
+            log.debug("[barge-in] popped unanswered user message conversationId={}", conversationId);
         }
     }
 
@@ -283,7 +283,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
     private void processTurn(WebSocketSession ws, ConversationSession session,
                              String replyToMessageId, String userText) throws IOException {
         long turnStart = System.currentTimeMillis();
-        log.info("[latency] conversationId={} stage=turn-start chars={}",
+        log.debug("[latency] conversationId={} stage=turn-start chars={}",
                 session.getConversationId(), userText == null ? 0 : userText.length());
 
         // Cancel any previous in-flight turn for this session. Disposing the
@@ -291,7 +291,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // HTTP stream stops generating tokens for the abandoned question.
         reactor.core.Disposable prev = session.getCurrentTurn().getAndSet(null);
         if (prev != null && !prev.isDisposed()) {
-            log.info("[turn-cancel] conversationId={} superseded by replyTo={}",
+            log.debug("[turn-cancel] conversationId={} superseded by replyTo={}",
                     session.getConversationId(), replyToMessageId);
             prev.dispose();
         }
@@ -309,7 +309,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                 .cacheSystemPrompt(cfg.isPromptCacheEnabled())
                 .build();
         long llmStart = System.currentTimeMillis();
-        log.info("[latency] conversationId={} stage=prompt-built ms={} messages={}",
+        log.debug("[latency] conversationId={} stage=prompt-built ms={} messages={}",
                 session.getConversationId(), llmStart - turnStart,
                 req.getMessages() == null ? 0 : req.getMessages().size());
 
@@ -327,7 +327,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                             if (isSuperseded(session, replyToMessageId)) return;
                             if (firstDeltaAt[0] < 0) {
                                 firstDeltaAt[0] = System.currentTimeMillis();
-                                log.info("[latency] conversationId={} stage=llm-first-token ms={}",
+                                log.debug("[latency] conversationId={} stage=llm-first-token ms={}",
                                         session.getConversationId(), firstDeltaAt[0] - llmStart);
                             }
                             emitDelta(ws, session, state, delta);
@@ -346,11 +346,11 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                         },
                         () -> {
                             if (isSuperseded(session, replyToMessageId)) {
-                                log.info("[turn-cancel] conversationId={} discarding reply for superseded replyTo={}",
+                                log.debug("[turn-cancel] conversationId={} discarding reply for superseded replyTo={}",
                                         session.getConversationId(), replyToMessageId);
                                 return;
                             }
-                            log.info("[latency] conversationId={} stage=llm-total ms={} firstTokenMs={}",
+                            log.debug("[latency] conversationId={} stage=llm-total ms={} firstTokenMs={}",
                                     session.getConversationId(),
                                     System.currentTimeMillis() - llmStart,
                                     firstDeltaAt[0] < 0 ? -1 : firstDeltaAt[0] - llmStart);
@@ -458,7 +458,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
             // we play in HANGUP mode bridges naturally.
             state.acc.setLength(Math.min(state.forwardedUpto, idx));
             state.mode = newMode;
-            log.info("[sentinel] mid-stream {} detected conversationId={} idxInAcc={}",
+            log.debug("[sentinel] mid-stream {} detected conversationId={} idxInAcc={}",
                     newMode, session.getConversationId(), idx);
             return;
         }
