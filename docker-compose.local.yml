@@ -94,9 +94,21 @@ services:
       <<: *spring-config
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_CALLORCHESTRATIONSERVICE_BASEURL: http://call-orchestration-service:8086/call-orchestration-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
     volumes:
       - ./conversation-summary-service/configs/service.properties:/etc/service.properties:ro
       - ./conversation-summary-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
+  notification-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+      CONFIGS_WHATSAPP_STUBMODE: "true"
+      CONFIGS_DASHBOARD_LEAD_LINK: http://localhost:5173/leads/
+    volumes:
+      - ./notification-service/configs/service.properties:/etc/service.properties:ro
+      - ./notification-service/secrets/secrets.properties:/etc/secrets.properties:ro
 
   call-orchestration-service:
     environment:

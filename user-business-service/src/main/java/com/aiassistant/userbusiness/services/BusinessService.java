@@ -60,6 +60,7 @@ public class BusinessService {
                 .description(request.getDescription())
                 .location(request.getLocation())
                 .operatingHours(request.getOperatingHours())
+                .whatsappNumber(request.getWhatsappNumber())
                 .isActive(true)
                 .build();
 
@@ -91,6 +92,9 @@ public class BusinessService {
         }
         if (request.getOperatingHours() != null) {
             entity.setOperatingHours(request.getOperatingHours());
+        }
+        if (request.getWhatsappNumber() != null) {
+            entity.setWhatsappNumber(request.getWhatsappNumber());
         }
         BusinessEntity saved = businessRepository.save(entity);
         log.info("Business profile updated id={}", saved.getId());

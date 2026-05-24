@@ -19,6 +19,11 @@ const schema = z.object({
   password: z.string().min(8, 'Use at least 8 characters').max(100),
   category: z.string().optional(),
   location: z.string().optional(),
+  whatsappNumber: z
+    .string()
+    .regex(/^\+[1-9]\d{6,14}$/, 'Use E.164 format e.g. +919900112233')
+    .optional()
+    .or(z.literal('')),
 });
 
 type Values = z.infer<typeof schema>;
@@ -28,13 +33,16 @@ export default function RegisterPage() {
   const setTokens = useAuthStore((s) => s.setTokens);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', email: '', password: '', category: '', location: '' },
+    defaultValues: {
+      name: '', email: '', password: '', category: '', location: '', whatsappNumber: '',
+    },
   });
 
   const mutation = useMutation({
     mutationFn: async (v: Values) => {
-      await business.register(v);
-      // Auto sign-in after registration
+      // Backend rejects empty-string whatsapp; send undefined when blank.
+      const payload = { ...v, whatsappNumber: v.whatsappNumber?.trim() || undefined };
+      await business.register(payload);
       return auth.signin(v.email, v.password);
     },
     onSuccess: (data) => {
@@ -79,6 +87,17 @@ export default function RegisterPage() {
               <Input placeholder="Mumbai, IN" {...form.register('location')} />
             </Field>
           </div>
+          <Field
+            label="WhatsApp number"
+            hint="for lead notifications (optional, add later)"
+            error={form.formState.errors.whatsappNumber?.message}
+          >
+            <Input
+              placeholder="+919900112233"
+              className="font-mono"
+              {...form.register('whatsappNumber')}
+            />
+          </Field>
 
           <Button type="submit" loading={mutation.isPending} className="w-full mt-2">
             Create account <ArrowRight className="h-4 w-4" />

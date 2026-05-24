@@ -50,8 +50,10 @@ public class CallSummaryEntity {
     @Column(name = "query_type")
     private String queryType;
 
+    /** 0-10 with one decimal place (e.g. {@code 7.5}). Widened from the
+     *  earlier 1-5 integer in {@code V2__widen_interest_rating.sql}. */
     @Column(name = "interest_rating")
-    private Integer interestRating;
+    private java.math.BigDecimal interestRating;
 
     @Column(name = "interest_reason", columnDefinition = "TEXT")
     private String interestReason;

@@ -16,6 +16,8 @@ export interface BusinessResponse {
   description: string | null;
   location: string | null;
   operatingHours: string | null;
+  /** E.164 WhatsApp number for owner-facing lead notifications. */
+  whatsappNumber: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string | null;
@@ -120,6 +122,63 @@ export interface EscalationRuleResponse {
   actionMessage: string | null;
   isActive: boolean;
   createdAt: string;
+}
+
+// ---------- leads ----------
+export type LeadType = 'APPOINTMENT' | 'HIGH_INTEREST' | 'HUMAN_REQUEST';
+export type LeadStatus = 'NEW' | 'APPROVED' | 'DECLINED' | 'IGNORED';
+export type ReminderMode = 'FIXED' | 'INCREMENT';
+
+export interface StructuredSlot {
+  date?: string;        // YYYY-MM-DD
+  period?: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT' | 'ANY';
+}
+
+export interface LeadResponse {
+  id: string;
+  businessId: string;
+  callLogId: string;
+  leadType: LeadType;
+
+  customerPhone: string | null;
+  customerName: string | null;
+  callerLanguage: string | null;
+
+  summary: string | null;
+  interestRating: number | null;
+
+  // APPOINTMENT-only fields.
+  service: string | null;
+  preferredWindowRaw: string | null;
+  structuredSlots: StructuredSlot[] | null;
+  suggestedDatetime: string | null;
+
+  status: LeadStatus;
+  confirmedDatetime: string | null;
+  declineReason: string | null;
+  decidedAt: string | null;
+  decidedVia: 'DASHBOARD' | 'WHATSAPP' | null;
+
+  remindersSent: number;
+  lastReminderAt: string | null;
+  nextReminderAt: string | null;
+
+  businessName: string | null;
+  ownerWhatsappNumber: string | null;
+  ownerNotifiedAt: string | null;
+  customerNotifiedAt: string | null;
+
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface LeadNotificationSettingsResponse {
+  businessId: string;
+  highInterestThreshold: number;
+  reminderMode: ReminderMode;
+  reminderIntervalMinutes: number;
+  maxReminders: number;
+  updatedAt: string | null;
 }
 
 export interface CallSummaryResponse {

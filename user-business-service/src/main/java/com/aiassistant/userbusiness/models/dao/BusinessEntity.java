@@ -49,6 +49,11 @@ public class BusinessEntity {
     @Column(name = "operating_hours")
     private String operatingHours;
 
+    /** WhatsApp number owner uses to receive appointment-request pings.
+     *  E.164 format. Optional until they want WhatsApp notifications. */
+    @Column(name = "whatsapp_number")
+    private String whatsappNumber;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 

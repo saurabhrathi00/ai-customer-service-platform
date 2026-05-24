@@ -1,7 +1,9 @@
 package com.aiassistant.summary.services;
 
 import com.aiassistant.summary.clients.CallOrchestrationClient;
+import com.aiassistant.summary.clients.UserBusinessLeadClient;
 import com.aiassistant.summary.configuration.ServiceConfiguration;
+import com.aiassistant.summary.models.request.CreateLeadRequest;
 import com.aiassistant.summary.llm.LlmMessage;
 import com.aiassistant.summary.llm.LlmProvider;
 import com.aiassistant.summary.llm.LlmProviderRegistry;
@@ -50,12 +52,23 @@ public class SummaryService {
               "summary": "<2-3 sentence neutral description of what happened on the call>",
               "callerName": "<the caller's name if they introduced themselves, else null>",
               "queryType": "<one of: product_inquiry | pricing | support | complaint | appointment | callback_request | other>",
-              "interestRating": <integer 1-5; how interested the caller seemed in doing business with the company. 1=cold/wrong-number, 3=mild interest, 5=ready to buy. When signal is mixed, use 3>,
+              "interestRating": <number 0.0-10.0 with at most ONE decimal place. How interested the caller seemed in doing business. 0=cold/wrong-number, 5=mild interest, 7-8=warm lead, 9-10=ready to buy. Decimals are encouraged when the signal is between bands (e.g. 7.5).>,
               "interestReason": "<one short sentence justifying the rating>",
               "mainConcerns": ["<concern or question in caller's own words>", ...],
               "callbackNeeded": <true if the caller explicitly asked for a human OR the assistant could not answer a substantive question; else false>,
               "callbackReason": "<one short sentence if callbackNeeded=true, else null>",
-              "unansweredQuestions": ["<question the assistant could not answer>", ...]
+              "unansweredQuestions": ["<question the assistant could not answer>", ...],
+              "leadIntent": {
+                "isAppointment": <true if the caller wanted to book / reschedule an appointment, else false>,
+                "isHumanRequest": <true if the caller explicitly asked for a human OR the assistant couldn't substantively answer; else false>,
+                "service": "<short service name, e.g. 'haircut', 'consultation' — null if not stated or not an appointment>",
+                "preferredWindowRaw": "<verbatim from caller, e.g. 'Wednesday morning', 'this weekend' — null if not stated>",
+                "structuredSlots": [
+                  { "date": "YYYY-MM-DD", "period": "MORNING|AFTERNOON|EVENING|NIGHT|ANY" }
+                ],
+                "suggestedDatetime": "<ISO-8601 UTC instant the owner can pre-fill in the approve form, e.g. '2026-05-28T04:30:00Z' for Wed 10:00 IST — null if you can't safely guess>",
+                "notes": "<anything else useful for the owner: first-visit, special requests, urgency — null if none>"
+              }
             }
 
             Hard rules:
@@ -65,11 +78,23 @@ public class SummaryService {
             - Keep summary <= 3 sentences. Keep each list item <= 1 sentence.
             - Match the caller's language for callerName, mainConcerns, unansweredQuestions
               (other fields stay English).
+            - interestRating MUST be a JSON number, not a string. One decimal max.
+            - leadIntent rules:
+              * isAppointment=true ONLY if caller is clearly trying to book a future visit.
+                General product/pricing questions are NOT appointment intent.
+              * isHumanRequest=true if caller explicitly asked for a human OR if
+                callbackNeeded=true (mirror that signal).
+              * DO NOT invent times. If caller only said "next week", emit ONE slot
+                with date=null and the period.
+              * suggestedDatetime is best-effort; null is safer than wrong.
+              * When isAppointment=false, set service / preferredWindowRaw /
+                structuredSlots / suggestedDatetime to null / [].
             """;
 
     private final LlmProviderRegistry providerRegistry;
     private final ServiceConfiguration serviceConfiguration;
     private final CallOrchestrationClient callOrchClient;
+    private final UserBusinessLeadClient leadClient;
     private final CallSummaryRepository repository;
     private final ObjectMapper mapper;
 
@@ -92,11 +117,24 @@ public class SummaryService {
                 return;
             }
 
-            CallSummaryEntity entity = runLlmAndBuildEntity(callLogId, payload);
-            persist(entity);
+            Result result = runLlmAndBuildEntity(callLogId, payload);
+            persist(result.entity);
             log.info("[summary] persisted callLogId={} interest={} queryType={} callback={}",
-                    callLogId, entity.getInterestRating(), entity.getQueryType(),
-                    entity.getCallbackNeeded());
+                    callLogId, result.entity.getInterestRating(), result.entity.getQueryType(),
+                    result.entity.getCallbackNeeded());
+
+            // Lead dispatch is best-effort and isolated — a failure here
+            // must not unwind the summary persist above. user-business-service
+            // applies the per-business interest threshold and may drop the
+            // candidate; that's intentional, not an error.
+            if (result.lead != null) {
+                try {
+                    leadClient.createLead(result.lead);
+                } catch (Exception leadEx) {
+                    log.error("[summary] lead dispatch failed callLogId={}: {}",
+                            callLogId, leadEx.getMessage());
+                }
+            }
         } catch (Exception ex) {
             log.error("[summary] FAILED callLogId={}: {}", callLogId, ex.getMessage(), ex);
         }
@@ -113,7 +151,11 @@ public class SummaryService {
         repository.save(entity);
     }
 
-    private CallSummaryEntity runLlmAndBuildEntity(String callLogId, TranscriptPayload payload) {
+    /** Carries the summary row plus an optional lead candidate so we can
+     *  persist + dispatch from the same place without re-running the LLM. */
+    private record Result(CallSummaryEntity entity, CreateLeadRequest lead) {}
+
+    private Result runLlmAndBuildEntity(String callLogId, TranscriptPayload payload) {
         LlmProvider provider = providerRegistry.get(null);
         ServiceConfiguration.Summary cfg = serviceConfiguration.getSummary();
 
@@ -135,7 +177,7 @@ public class SummaryService {
 
         ParsedSummary parsed = parse(raw);
         TokenUsage usage = reply.getUsage();
-        return CallSummaryEntity.builder()
+        CallSummaryEntity entity = CallSummaryEntity.builder()
                 .callLogId(callLogId)
                 .businessId(payload.getBusinessId())
                 .callerName(parsed.callerName)
@@ -153,6 +195,51 @@ public class SummaryService {
                 .outputTokens(usage == null ? null : (int) usage.getOutputTokens())
                 .totalTokens(usage == null ? null
                         : (int) (usage.getInputTokens() + usage.getOutputTokens()))
+                .build();
+
+        CreateLeadRequest lead = buildLeadCandidate(callLogId, payload, parsed);
+        return new Result(entity, lead);
+    }
+
+    /**
+     * Decide whether to forward a lead to user-business-service and shape
+     * the payload. The explicit-type cases (appointment, human-request) are
+     * always forwarded; the HIGH_INTEREST case sends {@code leadType=null}
+     * and lets user-business-service apply the per-business threshold so
+     * the owner-tuned config wins.
+     *
+     * <p>Returns {@code null} when the call has no actionable signal at all —
+     * spares user-business-service a no-op round trip.</p>
+     */
+    private CreateLeadRequest buildLeadCandidate(String callLogId, TranscriptPayload payload,
+                                                 ParsedSummary parsed) {
+        ParsedLeadIntent intent = parsed.leadIntent;
+        boolean hasInterest = parsed.interestRating != null;
+        if (intent == null && !hasInterest) return null;
+        if (intent != null && !intent.isAppointment && !intent.isHumanRequest && !hasInterest) {
+            return null;
+        }
+        String leadType = intent == null ? null
+                : intent.isAppointment ? "APPOINTMENT"
+                : intent.isHumanRequest ? "HUMAN_REQUEST"
+                : null;
+        // If neither explicit type nor numeric interest is present, there's
+        // nothing to forward.
+        if (leadType == null && !hasInterest) return null;
+
+        return CreateLeadRequest.builder()
+                .businessId(payload.getBusinessId())
+                .callLogId(callLogId)
+                .leadType(leadType)
+                .customerPhone(payload.getCustomerPhone())
+                .customerName(parsed.callerName)
+                .callerLanguage(payload.getLanguage())
+                .summary(parsed.summary)
+                .interestRating(parsed.interestRating)
+                .service(intent == null ? null : intent.service)
+                .preferredWindowRaw(intent == null ? null : intent.preferredWindowRaw)
+                .structuredSlots(intent == null ? null : intent.structuredSlots)
+                .suggestedDatetime(intent == null ? null : intent.suggestedDatetime)
                 .build();
     }
 
@@ -192,12 +279,13 @@ public class SummaryService {
             p.summary = text(node, "summary");
             p.callerName = text(node, "callerName");
             p.queryType = text(node, "queryType");
-            p.interestRating = intVal(node, "interestRating");
+            p.interestRating = decimalVal(node, "interestRating");
             p.interestReason = text(node, "interestReason");
             p.mainConcerns = stringList(node, "mainConcerns");
             p.callbackNeeded = boolVal(node, "callbackNeeded");
             p.callbackReason = text(node, "callbackReason");
             p.unansweredQuestions = stringList(node, "unansweredQuestions");
+            p.leadIntent = parseLeadIntent(node.get("leadIntent"));
         } catch (Exception e) {
             log.warn("[summary] JSON parse failed — saving raw text only. err={} preview=\"{}\"",
                     e.getMessage(), preview(raw));
@@ -237,6 +325,28 @@ public class SummaryService {
         catch (Exception ignored) { return null; }
     }
 
+    private static java.math.BigDecimal decimalVal(JsonNode n, String f) {
+        JsonNode v = n.get(f);
+        if (v == null || v.isNull()) return null;
+        try {
+            java.math.BigDecimal raw = v.isNumber()
+                    ? v.decimalValue()
+                    : new java.math.BigDecimal(v.asText().trim());
+            // Clamp to 0.0–10.0 with one decimal place so a hallucinated 12.5
+            // doesn't fail the column constraint downstream.
+            if (raw.compareTo(java.math.BigDecimal.ZERO) < 0) raw = java.math.BigDecimal.ZERO;
+            if (raw.compareTo(java.math.BigDecimal.TEN) > 0) raw = java.math.BigDecimal.TEN;
+            return raw.setScale(1, java.math.RoundingMode.HALF_UP);
+        } catch (Exception ignored) { return null; }
+    }
+
+    private static java.time.Instant instantVal(JsonNode n, String f) {
+        JsonNode v = n.get(f);
+        if (v == null || v.isNull()) return null;
+        try { return java.time.Instant.parse(v.asText().trim()); }
+        catch (Exception ignored) { return null; }
+    }
+
     private static Boolean boolVal(JsonNode n, String f) {
         JsonNode v = n.get(f);
         if (v == null || v.isNull()) return null;
@@ -264,16 +374,53 @@ public class SummaryService {
         return s.length() <= 200 ? s : s.substring(0, 200) + "…";
     }
 
+    private ParsedLeadIntent parseLeadIntent(JsonNode node) {
+        if (node == null || node.isNull() || !node.isObject()) return null;
+        ParsedLeadIntent l = new ParsedLeadIntent();
+        l.isAppointment = Boolean.TRUE.equals(boolVal(node, "isAppointment"));
+        l.isHumanRequest = Boolean.TRUE.equals(boolVal(node, "isHumanRequest"));
+        l.service = text(node, "service");
+        l.preferredWindowRaw = text(node, "preferredWindowRaw");
+        l.notes = text(node, "notes");
+        l.suggestedDatetime = instantVal(node, "suggestedDatetime");
+        JsonNode slots = node.get("structuredSlots");
+        if (slots != null && slots.isArray()) {
+            List<Map<String, Object>> out = new ArrayList<>(slots.size());
+            for (JsonNode slot : slots) {
+                if (slot == null || slot.isNull() || !slot.isObject()) continue;
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                JsonNode date = slot.get("date");
+                if (date != null && !date.isNull()) m.put("date", date.asText());
+                JsonNode period = slot.get("period");
+                if (period != null && !period.isNull()) m.put("period", period.asText());
+                if (!m.isEmpty()) out.add(m);
+            }
+            l.structuredSlots = out;
+        }
+        return l;
+    }
+
     /** Tiny POJO so the parser can hand fields back without 9 method args. */
     private static final class ParsedSummary {
         String summary;
         String callerName;
         String queryType;
-        Integer interestRating;
+        java.math.BigDecimal interestRating;
         String interestReason;
         List<String> mainConcerns;
         Boolean callbackNeeded;
         String callbackReason;
         List<String> unansweredQuestions;
+        ParsedLeadIntent leadIntent;
+    }
+
+    private static final class ParsedLeadIntent {
+        boolean isAppointment;
+        boolean isHumanRequest;
+        String service;
+        String preferredWindowRaw;
+        List<Map<String, Object>> structuredSlots;
+        java.time.Instant suggestedDatetime;
+        String notes;
     }
 }

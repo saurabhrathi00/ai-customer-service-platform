@@ -4,6 +4,8 @@ import {
   LayoutDashboard,
   PhoneCall,
   BookOpen,
+  Bell,
+  Sliders,
   Settings,
   Moon,
   Sun,
@@ -17,12 +19,14 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/Button';
 import { cn, initials } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { business } from '@/api/resources';
+import { business, leads } from '@/api/resources';
 
-const NAV = [
+const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: string }>; end?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/leads', label: 'Leads', icon: Bell },
   { to: '/calls', label: 'Calls', icon: PhoneCall },
   { to: '/knowledge', label: 'Knowledge', icon: BookOpen },
+  { to: '/configurations', label: 'Configurations', icon: Sliders },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -36,6 +40,17 @@ export function AppLayout() {
     enabled: Boolean(businessId),
     staleTime: 5 * 60_000,
   });
+  // Pending lead count powers the sidebar badge + topbar bell. Cheap query
+  // keyed on businessId so all consumers share it.
+  const { data: pendingLeadCount } = useQuery({
+    queryKey: ['leads', businessId, 'pending-count'],
+    queryFn: async () => {
+      const all = await leads.list(businessId!);
+      return all.filter((l) => l.status === 'NEW').length;
+    },
+    enabled: Boolean(businessId),
+    refetchInterval: 30_000,
+  });
 
   function doLogout() {
     logout();
@@ -47,19 +62,35 @@ export function AppLayout() {
       {/* Mobile top bar */}
       <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur px-4">
         <Logo />
-        <button
-          aria-label="Open menu"
-          onClick={() => setMobileOpen(true)}
-          className="rounded-md p-2 hover:bg-accent"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => navigate('/leads')}
+            aria-label={`${pendingLeadCount ?? 0} pending leads`}
+            className="relative rounded-md p-2 hover:bg-accent"
+          >
+            <Bell className="h-5 w-5" />
+            {(pendingLeadCount ?? 0) > 0 && (
+              <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                {pendingLeadCount}
+              </span>
+            )}
+          </button>
+          <button
+            aria-label="Open menu"
+            onClick={() => setMobileOpen(true)}
+            className="rounded-md p-2 hover:bg-accent"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       <div className="flex">
         {/* Sidebar (desktop) */}
         <aside className="hidden lg:flex sticky top-0 h-screen w-64 flex-col border-r bg-card/40 backdrop-blur">
-          <SidebarBody businessName={biz?.name} email={email} onLogout={doLogout} />
+          <SidebarBody businessName={biz?.name} email={email} onLogout={doLogout}
+                       pendingLeads={pendingLeadCount ?? 0} />
         </aside>
 
         {/* Sidebar drawer (mobile) */}
@@ -81,6 +112,7 @@ export function AppLayout() {
                 businessName={biz?.name}
                 email={email}
                 onLogout={doLogout}
+                pendingLeads={pendingLeadCount ?? 0}
                 onNavigate={() => setMobileOpen(false)}
               />
             </aside>
@@ -100,11 +132,13 @@ function SidebarBody({
   email,
   onLogout,
   onNavigate,
+  pendingLeads,
 }: {
   businessName?: string;
   email: string | null;
   onLogout: () => void;
   onNavigate?: () => void;
+  pendingLeads: number;
 }) {
   const { theme, toggle } = useTheme();
   return (
@@ -132,7 +166,12 @@ function SidebarBody({
                   }
                 >
                   <Icon className="h-4 w-4 shrink-0" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.to === '/leads' && pendingLeads > 0 && (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                      {pendingLeads}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             );

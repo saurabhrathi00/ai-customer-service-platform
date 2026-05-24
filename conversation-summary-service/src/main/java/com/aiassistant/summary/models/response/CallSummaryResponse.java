@@ -25,7 +25,7 @@ public class CallSummaryResponse {
     String callerName;
     String customerPhone;
     String queryType;
-    Integer interestRating;
+    java.math.BigDecimal interestRating;
     String interestReason;
     List<String> mainConcerns;
     Boolean callbackNeeded;

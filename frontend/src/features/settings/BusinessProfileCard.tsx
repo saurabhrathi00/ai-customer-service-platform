@@ -19,6 +19,11 @@ const schema = z.object({
   description: z.string().max(2000).optional().or(z.literal('')),
   location: z.string().max(500).optional().or(z.literal('')),
   operatingHours: z.string().max(500).optional().or(z.literal('')),
+  whatsappNumber: z
+    .string()
+    .regex(/^\+[1-9]\d{6,14}$/, 'Use E.164 format e.g. +919900112233')
+    .optional()
+    .or(z.literal('')),
 });
 type Values = z.infer<typeof schema>;
 
@@ -38,6 +43,7 @@ export function BusinessProfileCard() {
       description: profile.data?.description ?? '',
       location: profile.data?.location ?? '',
       operatingHours: profile.data?.operatingHours ?? '',
+      whatsappNumber: profile.data?.whatsappNumber ?? '',
     },
   });
 
@@ -49,6 +55,7 @@ export function BusinessProfileCard() {
         description: v.description || null,
         location: v.location || null,
         operatingHours: v.operatingHours || null,
+        whatsappNumber: v.whatsappNumber || null,
       } as never),
     onSuccess: () => {
       toast.success('Business profile updated');
@@ -93,9 +100,24 @@ export function BusinessProfileCard() {
                 <Input placeholder="City, country" {...form.register('location')} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Operating hours</Label>
-              <Input placeholder="Mon–Sat 9am–7pm" {...form.register('operatingHours')} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Operating hours</Label>
+                <Input placeholder="Mon–Sat 9am–7pm" {...form.register('operatingHours')} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>WhatsApp number</Label>
+                <Input
+                  placeholder="+919900112233"
+                  className="font-mono"
+                  {...form.register('whatsappNumber')}
+                />
+                {form.formState.errors.whatsappNumber && (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.whatsappNumber.message}
+                  </p>
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Description</Label>

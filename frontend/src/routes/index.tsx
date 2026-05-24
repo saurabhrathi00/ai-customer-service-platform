@@ -11,6 +11,9 @@ const DashboardPage = lazy(() => import('./DashboardPage'));
 const CallsListPage = lazy(() => import('./CallsListPage'));
 const CallDetailPage = lazy(() => import('./CallDetailPage'));
 const KnowledgePage = lazy(() => import('./KnowledgePage'));
+const LeadsListPage = lazy(() => import('./LeadsListPage'));
+const LeadDetailPage = lazy(() => import('./LeadDetailPage'));
+const ConfigurationsPage = lazy(() => import('./ConfigurationsPage'));
 const SettingsPage = lazy(() => import('./SettingsPage'));
 const NotFoundPage = lazy(() => import('./NotFoundPage'));
 
@@ -50,7 +53,10 @@ export const router = createBrowserRouter([
           { index: true, element: <Suspended><DashboardPage /></Suspended> },
           { path: 'calls', element: <Suspended><CallsListPage /></Suspended> },
           { path: 'calls/:callId', element: <Suspended><CallDetailPage /></Suspended> },
+          { path: 'leads', element: <Suspended><LeadsListPage /></Suspended> },
+          { path: 'leads/:leadId', element: <Suspended><LeadDetailPage /></Suspended> },
           { path: 'knowledge', element: <Suspended><KnowledgePage /></Suspended> },
+          { path: 'configurations', element: <Suspended><ConfigurationsPage /></Suspended> },
           { path: 'settings', element: <Suspended><SettingsPage /></Suspended> },
           { path: '*', element: <Suspended><NotFoundPage /></Suspended> },
         ],

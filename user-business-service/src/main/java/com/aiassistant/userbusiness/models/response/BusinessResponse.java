@@ -17,6 +17,9 @@ public class BusinessResponse {
     String description;
     String location;
     String operatingHours;
+    /** Owner's WhatsApp number (E.164). Used for appointment-request pings.
+     *  Null until owner sets it in settings. */
+    String whatsappNumber;
     Boolean isActive;
     Instant createdAt;
     Instant updatedAt;

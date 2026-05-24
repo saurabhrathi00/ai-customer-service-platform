@@ -43,7 +43,8 @@ public class AuthenticationService {
             "business.read", "business.write",
             "knowledge.read", "knowledge.write",
             "calls.read",
-            "summary.read");
+            "summary.read",
+            "leads.read", "leads.write");
 
     private final SecretsConfiguration secretsConfiguration;
     private final ServiceConfiguration serviceConfiguration;

@@ -1,5 +1,6 @@
 package com.aiassistant.userbusiness.models.request;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -13,4 +14,8 @@ public class UpdateBusinessProfileRequest {
     private String description;
     private String location;
     private String operatingHours;
+
+    /** Owner WhatsApp number for appointment notifications. E.164. */
+    @Pattern(regexp = "^\\+[1-9]\\d{6,14}$", message = "whatsappNumber must be E.164")
+    private String whatsappNumber;
 }

@@ -41,4 +41,11 @@ public class HttpClientConfig {
                 .baseUrl(serviceConfiguration.getCallOrchestrationService().getBaseUrl())
                 .build();
     }
+
+    @Bean(name = "userBusinessServiceRestClient")
+    public RestClient userBusinessServiceRestClient() {
+        return RestClient.builder()
+                .baseUrl(serviceConfiguration.getUserBusinessService().getBaseUrl())
+                .build();
+    }
 }

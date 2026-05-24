@@ -9,10 +9,13 @@ import type {
   EscalationRuleResponse,
   FaqResponse,
   FreeformResponse,
+  LeadNotificationSettingsResponse,
+  LeadResponse,
   PhoneNumberResponse,
   ProfileResponse,
   RatingConfigResponse,
   RatingSignalKey,
+  ReminderMode,
 } from '@/types/api';
 
 // ---------- auth ----------
@@ -31,6 +34,7 @@ export const business = {
     description?: string;
     location?: string;
     operatingHours?: string;
+    whatsappNumber?: string;
   }) => businessApi.post<BusinessResponse>('/business/register', input).then((r) => r.data),
 
   profile: (id: string) =>
@@ -125,6 +129,53 @@ export const knowledge = {
 export const calls = {
   recent: (businessId: string) =>
     callsApi.get<CallLogResponse[]>(`/calls/${businessId}/recent`).then((r) => r.data),
+};
+
+// ---------- leads ----------
+export const leads = {
+  list: (businessId: string) =>
+    businessApi.get<LeadResponse[]>(`/business/${businessId}/leads`).then((r) => r.data),
+
+  get: (businessId: string, leadId: string) =>
+    businessApi
+      .get<LeadResponse>(`/business/${businessId}/leads/${leadId}`)
+      .then((r) => r.data),
+
+  approve: (businessId: string, leadId: string, confirmedDatetime?: string | null) =>
+    businessApi
+      .post<LeadResponse>(`/business/${businessId}/leads/${leadId}/approve`,
+        confirmedDatetime ? { confirmedDatetime } : {})
+      .then((r) => r.data),
+
+  decline: (businessId: string, leadId: string, reason: string) =>
+    businessApi
+      .post<LeadResponse>(`/business/${businessId}/leads/${leadId}/decline`, { reason })
+      .then((r) => r.data),
+
+  ignore: (businessId: string, leadId: string) =>
+    businessApi
+      .post<LeadResponse>(`/business/${businessId}/leads/${leadId}/ignore`)
+      .then((r) => r.data),
+};
+
+export const leadSettings = {
+  get: (businessId: string) =>
+    businessApi
+      .get<LeadNotificationSettingsResponse>(`/business/${businessId}/lead-settings`)
+      .then((r) => r.data),
+
+  update: (
+    businessId: string,
+    patch: Partial<{
+      highInterestThreshold: number;
+      reminderMode: ReminderMode;
+      reminderIntervalMinutes: number;
+      maxReminders: number;
+    }>,
+  ) =>
+    businessApi
+      .put<LeadNotificationSettingsResponse>(`/business/${businessId}/lead-settings`, patch)
+      .then((r) => r.data),
 };
 
 // ---------- summaries ----------

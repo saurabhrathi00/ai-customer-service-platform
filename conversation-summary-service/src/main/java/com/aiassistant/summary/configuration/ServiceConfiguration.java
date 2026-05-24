@@ -11,6 +11,7 @@ public class ServiceConfiguration {
 
     private AuthService authService;
     private CallOrchestrationService callOrchestrationService;
+    private UserBusinessService userBusinessService;
     private BusinessDb businessDb;
     private Llm llm;
     private Summary summary;
@@ -22,6 +23,11 @@ public class ServiceConfiguration {
 
     @Data
     public static class CallOrchestrationService {
+        private String baseUrl;
+    }
+
+    @Data
+    public static class UserBusinessService {
         private String baseUrl;
     }
 
