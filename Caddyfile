@@ -17,7 +17,7 @@
 	encode zstd gzip
 
 	# Block requests that don't match any service prefix
-	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/*
+	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/* /conversation-summary-service/*
 	respond @unknown "Not Found" 404
 
 	# Each service already sets server.servlet.context-path matching its prefix,
@@ -46,6 +46,15 @@
 		reverse_proxy call-orchestration-service:8086
 	}
 
-	# ai-conversation-service is intentionally NOT exposed publicly.
-	# Only call-orchestration-service talks to it, over the internal network.
+	# Tenant-facing: dashboard reads call summaries here.
+	# Internal endpoints on this service are reached via the docker network only.
+	route /conversation-summary-service/* {
+		reverse_proxy conversation-summary-service:8089
+	}
+
+	# ai-conversation-service and notification-service are intentionally NOT
+	# exposed publicly. Only sibling services talk to them over the internal
+	# docker network. notification-service has no inbound API at all (it polls
+	# user-business-service); ai-conversation-service is only called by
+	# call-orchestration-service over the internal WebSocket.
 }
