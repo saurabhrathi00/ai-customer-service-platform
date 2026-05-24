@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/api/auth/:path*", "destination": "https://voxhelperaibackend.duckdns.org/auth-service/:path*" },
+    { "source": "/api/business/:path*", "destination": "https://voxhelperaibackend.duckdns.org/user-business-service/:path*" },
+    { "source": "/api/knowledge/:path*", "destination": "https://voxhelperaibackend.duckdns.org/knowledge-service/:path*" },
+    { "source": "/api/calls/:path*", "destination": "https://voxhelperaibackend.duckdns.org/call-orchestration-service/:path*" },
+    { "source": "/api/summary/:path*", "destination": "https://voxhelperaibackend.duckdns.org/conversation-summary-service/:path*" }
+  ]
+}
