@@ -249,9 +249,10 @@ public class SummaryService {
         StringBuilder sb = new StringBuilder();
         // Today's date is needed so the LLM can resolve "tomorrow" / "next
         // Monday" / "23rd" in the transcript to a concrete YYYY-MM-DD.
-        sb.append("Today's date (UTC): ")
-          .append(java.time.LocalDate.now(java.time.ZoneOffset.UTC))
-          .append('\n');
+        sb.append("Today's date (IST): ")
+          .append(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")))
+          .append('\n')
+          .append("Caller timezone: Asia/Kolkata (IST, UTC+5:30). All times the caller mentions are in IST.\n");
         if (p.getBusinessName() != null && !p.getBusinessName().isBlank()) {
             sb.append("Business: ").append(p.getBusinessName()).append('\n');
         }
