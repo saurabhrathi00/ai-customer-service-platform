@@ -12,4 +12,7 @@ public interface CallSummaryRepository extends JpaRepository<CallSummaryEntity, 
     Optional<CallSummaryEntity> findByCallLogId(String callLogId);
 
     boolean existsByCallLogId(String callLogId);
+
+    /** Tenant-scoped listing for the dashboard. Newest first. */
+    java.util.List<CallSummaryEntity> findByBusinessIdOrderByCreatedAtDesc(String businessId);
 }

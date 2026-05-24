@@ -122,6 +122,24 @@ export interface EscalationRuleResponse {
   createdAt: string;
 }
 
+export interface CallSummaryResponse {
+  id: string;
+  callLogId: string;
+  businessId: string;
+  callerName: string | null;
+  customerPhone: string | null;
+  queryType: string | null;
+  interestRating: number | null;
+  interestReason: string | null;
+  mainConcerns: string[] | null;
+  callbackNeeded: boolean | null;
+  callbackReason: string | null;
+  unansweredQuestions: string[] | null;
+  summaryText: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
 export interface CallLogResponse {
   id: string;
   businessId: string;

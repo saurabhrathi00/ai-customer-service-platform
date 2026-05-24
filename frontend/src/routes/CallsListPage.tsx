@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { calls } from '@/api/resources';
 import { useAuthStore } from '@/store/auth';
 import { callDuration, callRelative, feedbackLabel, interestColor } from '@/features/calls/helpers';
+import { useSummariesByCallId } from '@/features/calls/useSummaries';
 import { formatDuration } from '@/lib/utils';
 
 type FilterKey = 'all' | 'callbacks' | 'hot';
@@ -29,24 +30,41 @@ export default function CallsListPage() {
     enabled: Boolean(businessId),
     refetchInterval: 60_000,
   });
+  const { map: summaryMap } = useSummariesByCallId();
 
   const filtered = useMemo(() => {
     const all = recent.data ?? [];
+    // Resolve the effective interest + callback for each call, preferring
+    // summary-service truth over the call_logs snapshot.
+    const eff = (c: typeof all[number]) => {
+      const s = summaryMap.get(c.id);
+      return {
+        interest: s?.interestRating ?? c.interestRating ?? null,
+        callback: s?.callbackNeeded ?? c.callbackRequested,
+      };
+    };
     let list = all;
-    if (filter === 'callbacks') list = list.filter((c) => c.callbackRequested);
-    if (filter === 'hot') list = list.filter((c) => (c.interestRating ?? 0) >= 4);
+    if (filter === 'callbacks') list = list.filter((c) => eff(c).callback);
+    if (filter === 'hot') list = list.filter((c) => (eff(c).interest ?? 0) >= 4);
     if (q.trim()) {
       const needle = q.toLowerCase();
       list = list.filter((c) =>
-        [c.customerName, c.customerPhone, c.callSummary, c.queryType]
+        [c.customerName, c.customerPhone, summaryMap.get(c.id)?.summaryText ?? c.callSummary, c.queryType]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(needle)),
       );
     }
-    return list.slice().sort(
-      (a, b) => +new Date(b.callStartedAt) - +new Date(a.callStartedAt),
-    );
-  }, [recent.data, filter, q]);
+    return list.slice().sort((a, b) => {
+      // Callbacks tab: highest interest first, then newest as a tie-break,
+      // so the most promising leads to ring back are at the top.
+      if (filter === 'callbacks') {
+        const ia = eff(a).interest ?? -1;
+        const ib = eff(b).interest ?? -1;
+        if (ib !== ia) return ib - ia;
+      }
+      return +new Date(b.callStartedAt) - +new Date(a.callStartedAt);
+    });
+  }, [recent.data, filter, q, summaryMap]);
 
   function selectFilter(next: FilterKey) {
     setFilter(next);
@@ -121,6 +139,10 @@ export default function CallsListPage() {
                   <tbody>
                     {filtered.map((c) => {
                       const fb = feedbackLabel(c.feedbackScore);
+                      const s = summaryMap.get(c.id);
+                      const summaryText = s?.summaryText ?? c.callSummary;
+                      const interest = s?.interestRating ?? c.interestRating;
+                      const callback = s?.callbackNeeded ?? c.callbackRequested;
                       return (
                         <tr
                           key={c.id}
@@ -129,11 +151,11 @@ export default function CallsListPage() {
                           <td className="px-4 py-3">
                             <Link to={`/calls/${c.id}`} className="block min-w-0">
                               <div className="font-medium truncate max-w-[16rem]">
-                                {c.customerName ?? c.customerPhone ?? 'Anonymous'}
+                                {s?.callerName ?? c.customerName ?? c.customerPhone ?? 'Anonymous'}
                               </div>
-                              {c.customerName && c.customerPhone && (
+                              {(s?.customerPhone ?? c.customerPhone) && (s?.callerName ?? c.customerName) && (
                                 <div className="text-xs text-muted-foreground">
-                                  {c.customerPhone}
+                                  {s?.customerPhone ?? c.customerPhone}
                                 </div>
                               )}
                             </Link>
@@ -141,7 +163,7 @@ export default function CallsListPage() {
                           <td className="px-4 py-3 hidden md:table-cell">
                             <Link to={`/calls/${c.id}`}>
                               <span className="line-clamp-1 text-muted-foreground max-w-md">
-                                {c.callSummary ?? 'Summary pending…'}
+                                {summaryText ?? 'Summary pending…'}
                               </span>
                             </Link>
                           </td>
@@ -153,12 +175,10 @@ export default function CallsListPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex flex-wrap justify-end gap-1.5">
-                              {c.callbackRequested && (
-                                <Badge variant="warning">Callback</Badge>
-                              )}
-                              {c.interestRating != null && (
-                                <Badge variant={interestColor(c.interestRating) as never}>
-                                  {c.interestRating} ★
+                              {callback && <Badge variant="warning">Callback</Badge>}
+                              {interest != null && (
+                                <Badge variant={interestColor(interest) as never}>
+                                  {interest} ★
                                 </Badge>
                               )}
                               {fb && <Badge variant={fb.variant}>{fb.label}</Badge>}

@@ -34,7 +34,16 @@ public class AuthenticationService {
     // MVP role/scopes — every business signs in as its own admin. Multi-user
     // support will read these from a user_roles table when that lands.
     private static final List<String> MVP_ROLES = List.of("ROLE_BUSINESS_ADMIN");
-    private static final List<String> MVP_SCOPES = List.of("business.read", "business.write");
+    // Business owners use the dashboard to read/write their own business
+    // profile, knowledge, and call activity, so the issued JWT carries the
+    // tenant-facing scopes for each of those services. Service-to-service
+    // scopes ({service}.internal.*) are deliberately NOT granted here —
+    // those are only issued via /api/internal/token to service callers.
+    private static final List<String> MVP_SCOPES = List.of(
+            "business.read", "business.write",
+            "knowledge.read", "knowledge.write",
+            "calls.read",
+            "summary.read");
 
     private final SecretsConfiguration secretsConfiguration;
     private final ServiceConfiguration serviceConfiguration;

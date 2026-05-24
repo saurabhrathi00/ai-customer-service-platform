@@ -79,3 +79,4 @@ export const authApi      = makeClient('/api/auth/api/v1');
 export const businessApi  = makeClient('/api/business/api/v1');
 export const knowledgeApi = makeClient('/api/knowledge/api/v1');
 export const callsApi     = makeClient('/api/calls/api/v1');
+export const summaryApi   = makeClient('/api/summary/api/v1');

@@ -33,6 +33,7 @@ import {
   feedbackLabel,
   interestColor,
 } from '@/features/calls/helpers';
+import { useSummariesByCallId } from '@/features/calls/useSummaries';
 import { formatDuration } from '@/lib/utils';
 
 export default function DashboardPage() {
@@ -44,7 +45,11 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   });
 
-  const stats = useMemo(() => computeStats(recent.data ?? []), [recent.data]);
+  const { map: summaryMap } = useSummariesByCallId();
+  const stats = useMemo(
+    () => computeStats(recent.data ?? [], summaryMap),
+    [recent.data, summaryMap],
+  );
 
   return (
     <>
@@ -197,6 +202,10 @@ export default function DashboardPage() {
               <ul className="divide-y">
                 {recent.data!.slice(0, 5).map((c) => {
                   const fb = feedbackLabel(c.feedbackScore);
+                  const s = summaryMap.get(c.id);
+                  const summaryText = s?.summaryText ?? c.callSummary;
+                  const interest = s?.interestRating ?? c.interestRating;
+                  const callback = s?.callbackNeeded ?? c.callbackRequested;
                   return (
                     <li key={c.id}>
                       <Link
@@ -208,10 +217,10 @@ export default function DashboardPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">
-                            {c.customerName ?? c.customerPhone ?? 'Anonymous caller'}
+                            {s?.callerName ?? c.customerName ?? c.customerPhone ?? 'Anonymous caller'}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {c.callSummary ?? 'Summary pending…'}
+                            {summaryText ?? 'Summary pending…'}
                           </p>
                         </div>
                         <div className="hidden sm:flex flex-col items-end gap-1">
@@ -219,12 +228,10 @@ export default function DashboardPage() {
                             {callRelative(c.callStartedAt)} · {formatDuration(callDuration(c))}
                           </span>
                           <div className="flex items-center gap-1.5">
-                            {c.callbackRequested && (
-                              <Badge variant="warning">Callback</Badge>
-                            )}
-                            {c.interestRating != null && (
-                              <Badge variant={interestColor(c.interestRating) as never}>
-                                {c.interestRating} ★
+                            {callback && <Badge variant="warning">Callback</Badge>}
+                            {interest != null && (
+                              <Badge variant={interestColor(interest) as never}>
+                                {interest} ★
                               </Badge>
                             )}
                             {fb && <Badge variant={fb.variant}>{fb.label}</Badge>}
@@ -332,7 +339,10 @@ function ChartTooltip({ active, label, payload }: ChartTooltipProps) {
   );
 }
 
-function computeStats(callsList: import('@/types/api').CallLogResponse[]) {
+function computeStats(
+  callsList: import('@/types/api').CallLogResponse[],
+  summaryMap: Map<string, import('@/types/api').CallSummaryResponse>,
+) {
   const now = new Date();
   const today = startOfDay(now);
   const yesterday = startOfDay(subDays(now, 1));
@@ -369,7 +379,8 @@ function computeStats(callsList: import('@/types/api').CallLogResponse[]) {
     if (d >= weekStart) weekCount++;
     else if (d >= prevWeekStart) prevWeekCount++;
 
-    if (c.callbackRequested) callbacks++;
+    const s = summaryMap.get(c.id);
+    if (s?.callbackNeeded ?? c.callbackRequested) callbacks++;
 
     const dur = callDuration(c);
     if (dur != null) {
@@ -377,10 +388,11 @@ function computeStats(callsList: import('@/types/api').CallLogResponse[]) {
       durationN++;
     }
 
-    if (c.interestRating != null) {
-      interestSum += c.interestRating;
+    const interest = s?.interestRating ?? c.interestRating;
+    if (interest != null) {
+      interestSum += interest;
       interestN++;
-      if (c.interestRating >= 4) hotLeads++;
+      if (interest >= 4) hotLeads++;
     }
 
     if (c.feedbackScore != null) {

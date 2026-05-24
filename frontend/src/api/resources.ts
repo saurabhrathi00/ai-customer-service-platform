@@ -1,8 +1,9 @@
-import { authApi, businessApi, callsApi, knowledgeApi } from './client';
+import { authApi, businessApi, callsApi, knowledgeApi, summaryApi } from './client';
 import type {
   AuthenticationResponse,
   BusinessResponse,
   CallLogResponse,
+  CallSummaryResponse,
   CompletenessResponse,
   EscalationAction,
   EscalationRuleResponse,
@@ -124,4 +125,12 @@ export const knowledge = {
 export const calls = {
   recent: (businessId: string) =>
     callsApi.get<CallLogResponse[]>(`/calls/${businessId}/recent`).then((r) => r.data),
+};
+
+// ---------- summaries ----------
+export const summaries = {
+  /** Newest-first list of every summary for a business. Joined client-side
+   *  with the recent-calls list on the dashboard. */
+  list: (businessId: string) =>
+    summaryApi.get<CallSummaryResponse[]>(`/summaries/${businessId}`).then((r) => r.data),
 };

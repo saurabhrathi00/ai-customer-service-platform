@@ -11,11 +11,13 @@ import {
   FileText,
   Bot,
   User,
+  HelpCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -28,6 +30,7 @@ import {
   type TranscriptTurn,
 } from '@/features/calls/helpers';
 import { formatDuration } from '@/lib/utils';
+import { useSummariesByCallId } from '@/features/calls/useSummaries';
 
 export default function CallDetailPage() {
   const { callId } = useParams<{ callId: string }>();
@@ -41,6 +44,16 @@ export default function CallDetailPage() {
     enabled: Boolean(businessId),
   });
   const call = q.data?.find((c) => c.id === callId);
+
+  const { map: summaryMap } = useSummariesByCallId();
+  const summary = call ? summaryMap.get(call.id) : undefined;
+
+  // Prefer fields from summary-service over the call-orch row — the summary
+  // table is the source of truth for AI-derived analytics. call_logs only
+  // carries the synchronous bits we knew during the call.
+  const interestRating = summary?.interestRating ?? call?.interestRating ?? null;
+  const callbackNeeded = summary?.callbackNeeded ?? call?.callbackRequested ?? false;
+  const summaryText = summary?.summaryText ?? call?.callSummary ?? null;
 
   return (
     <>
@@ -73,15 +86,68 @@ export default function CallDetailPage() {
             <div className="space-y-6 lg:col-span-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Summary</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>AI summary</CardTitle>
+                      {summary?.queryType && (
+                        <CardDescription className="mt-1 capitalize">
+                          {summary.queryType.replace(/[_-]/g, ' ').toLowerCase()}
+                        </CardDescription>
+                      )}
+                    </div>
+                    {summary && (
+                      <Badge variant="outline">Generated</Badge>
+                    )}
+                  </div>
                 </CardHeader>
-                <CardContent>
-                  {call.callSummary ? (
-                    <p className="text-sm leading-6 whitespace-pre-wrap">{call.callSummary}</p>
+                <CardContent className="space-y-4">
+                  {summaryText ? (
+                    <p className="text-sm leading-6 whitespace-pre-wrap">{summaryText}</p>
                   ) : (
                     <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                      Summary is still being generated. Refresh in a few seconds.
+                      Summary is still being generated. It usually lands a few seconds after the call ends.
                     </div>
+                  )}
+
+                  {summary?.mainConcerns && summary.mainConcerns.length > 0 && (
+                    <Section icon={<AlertCircle className="h-4 w-4 text-[hsl(var(--warning))]" />} label="Main concerns">
+                      <ul className="grid gap-1.5 sm:grid-cols-2">
+                        {summary.mainConcerns.map((c, i) => (
+                          <li key={i} className="rounded-md bg-accent/40 px-3 py-2 text-sm leading-5">
+                            {c}
+                          </li>
+                        ))}
+                      </ul>
+                    </Section>
+                  )}
+
+                  {summary?.unansweredQuestions && summary.unansweredQuestions.length > 0 && (
+                    <Section icon={<HelpCircle className="h-4 w-4 text-destructive" />} label="Questions the AI couldn't answer">
+                      <ul className="space-y-1.5">
+                        {summary.unansweredQuestions.map((c, i) => (
+                          <li
+                            key={i}
+                            className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-5"
+                          >
+                            {c}
+                          </li>
+                        ))}
+                      </ul>
+                    </Section>
+                  )}
+
+                  {summary?.callbackNeeded && summary?.callbackReason && (
+                    <Section icon={<PhoneForwarded className="h-4 w-4 text-[hsl(var(--warning))]" />} label="Callback reason">
+                      <p className="rounded-md border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/5 px-3 py-2 text-sm leading-5">
+                        {summary.callbackReason}
+                      </p>
+                    </Section>
+                  )}
+
+                  {summary?.interestReason && (
+                    <Section icon={<Star className="h-4 w-4 text-primary" />} label="Why this interest score">
+                      <p className="text-sm text-muted-foreground italic">"{summary.interestReason}"</p>
+                    </Section>
                   )}
                 </CardContent>
               </Card>
@@ -105,10 +171,10 @@ export default function CallDetailPage() {
                   <CardTitle>Caller</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  <Row label="Name" value={call.customerName ?? '—'} />
+                  <Row label="Name" value={summary?.callerName ?? call.customerName ?? '—'} />
                   <Row
                     label="Phone"
-                    value={call.customerPhone ?? '—'}
+                    value={summary?.customerPhone ?? call.customerPhone ?? '—'}
                     icon={<Phone className="h-3.5 w-3.5" />}
                   />
                   <Row label="Provider" value={call.provider} />
@@ -133,9 +199,9 @@ export default function CallDetailPage() {
                   <Row
                     label="Interest"
                     value={
-                      call.interestRating != null ? (
-                        <Badge variant={interestColor(call.interestRating) as never}>
-                          {call.interestRating} ★
+                      interestRating != null ? (
+                        <Badge variant={interestColor(interestRating) as never}>
+                          {interestRating} ★
                         </Badge>
                       ) : (
                         '—'
@@ -162,7 +228,7 @@ export default function CallDetailPage() {
                   <Row
                     label="Callback"
                     value={
-                      call.callbackRequested ? (
+                      callbackNeeded ? (
                         <Badge variant="warning">
                           <PhoneForwarded className="mr-1 h-3 w-3" /> Pending
                         </Badge>
@@ -178,6 +244,25 @@ export default function CallDetailPage() {
         )}
       </PageBody>
     </>
+  );
+}
+
+function Section({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {icon} {label}
+      </div>
+      {children}
+    </div>
   );
 }
 
