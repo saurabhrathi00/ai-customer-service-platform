@@ -62,11 +62,11 @@ public class SummaryService {
                 "isAppointment": <true if the caller wanted to book / reschedule an appointment, else false>,
                 "isHumanRequest": <true if the caller explicitly asked for a human OR the assistant couldn't substantively answer; else false>,
                 "service": "<short service name, e.g. 'haircut', 'consultation' — null if not stated or not an appointment>",
-                "preferredWindowRaw": "<verbatim from caller, e.g. 'Wednesday morning', 'this weekend' — null if not stated>",
+                "preferredWindowRaw": "<verbatim from caller including date AND time, e.g. 'Wednesday at 10am', 'tomorrow around lunch' — null if neither stated>",
                 "structuredSlots": [
                   { "date": "YYYY-MM-DD", "period": "MORNING|AFTERNOON|EVENING|NIGHT|ANY" }
                 ],
-                "suggestedDatetime": "<ISO-8601 UTC instant the owner can pre-fill in the approve form, e.g. '2026-05-28T04:30:00Z' for Wed 10:00 IST — null if you can't safely guess>",
+                "suggestedDatetime": "<ISO-8601 UTC instant the owner can pre-fill in the approve form, e.g. '2026-05-28T04:30:00Z' for Wed 10:00 IST. Populate WHENEVER the caller stated both a day AND a rough time — convert as best you can (treat ambiguous times like 'morning' as 10:00, 'afternoon' as 14:00, 'evening' as 18:00). Use null ONLY when day or time is entirely missing.>",
                 "notes": "<anything else useful for the owner: first-visit, special requests, urgency — null if none>"
               }
             }
@@ -84,9 +84,11 @@ public class SummaryService {
                 General product/pricing questions are NOT appointment intent.
               * isHumanRequest=true if caller explicitly asked for a human OR if
                 callbackNeeded=true (mirror that signal).
-              * DO NOT invent times. If caller only said "next week", emit ONE slot
-                with date=null and the period.
-              * suggestedDatetime is best-effort; null is safer than wrong.
+              * DO NOT invent dates. If caller only said "next week" without a day,
+                leave structuredSlots empty and suggestedDatetime null.
+              * Resolving relative dates: "tomorrow" / "next Monday" / "23rd" should
+                be converted to a concrete YYYY-MM-DD based on today's date as
+                shown in the transcript header. When in doubt, null is safer than wrong.
               * When isAppointment=false, set service / preferredWindowRaw /
                 structuredSlots / suggestedDatetime to null / [].
             """;
@@ -245,6 +247,11 @@ public class SummaryService {
 
     private String buildUserPrompt(TranscriptPayload p) {
         StringBuilder sb = new StringBuilder();
+        // Today's date is needed so the LLM can resolve "tomorrow" / "next
+        // Monday" / "23rd" in the transcript to a concrete YYYY-MM-DD.
+        sb.append("Today's date (UTC): ")
+          .append(java.time.LocalDate.now(java.time.ZoneOffset.UTC))
+          .append('\n');
         if (p.getBusinessName() != null && !p.getBusinessName().isBlank()) {
             sb.append("Business: ").append(p.getBusinessName()).append('\n');
         }

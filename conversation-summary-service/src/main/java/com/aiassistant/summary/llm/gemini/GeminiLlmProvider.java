@@ -156,6 +156,11 @@ public class GeminiLlmProvider implements LlmProvider {
                 : llmCfg.getMaxOutputTokens());
         gc.put("temperature", req.getTemperature() != null ? req.getTemperature()
                 : llmCfg.getTemperature());
+        // Gemini 2.5 "thinking" models silently spend output-token budget on
+        // hidden reasoning before emitting any text. Summary work is mechanical
+        // JSON shaping — disable thinking so the full budget is available for
+        // the actual response, otherwise the JSON gets truncated mid-object.
+        gc.putObject("thinkingConfig").put("thinkingBudget", 0);
         return body;
     }
 

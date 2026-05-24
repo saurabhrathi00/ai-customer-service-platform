@@ -206,12 +206,13 @@ export default function LeadDetailPage() {
                       </Button>
 
                       {lead.customerPhone && (
-                        <a
-                          href={`tel:${lead.customerPhone}`}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-transparent px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => copyPhone(lead.customerPhone!)}
                         >
-                          <Phone className="h-4 w-4" /> Call directly
-                        </a>
+                          <Phone className="h-4 w-4" /> Copy number
+                        </Button>
                       )}
 
                       <Button
@@ -357,6 +358,21 @@ function DetailRow({
       <span className={valueClassName ?? 'font-medium text-right break-words'}>{value}</span>
     </div>
   );
+}
+
+/** Copy the caller's number to clipboard + flash a toast. Works on every
+ *  device (dashboard is most often opened on a laptop where tel: links are
+ *  unreliable, so we don't bother with auto-dial). The owner copies, then
+ *  dials from whatever device / app they prefer. */
+async function copyPhone(phone: string) {
+  try {
+    await navigator.clipboard.writeText(phone);
+    toast.success('Phone number copied', { description: phone });
+  } catch {
+    // Clipboard API can fail on insecure origins / older browsers.
+    // Fallback: still tell them the number so they can copy manually.
+    toast.message('Copy unavailable — number:', { description: phone });
+  }
 }
 
 // datetime-local <input> wants 'YYYY-MM-DDTHH:mm' in LOCAL time.
