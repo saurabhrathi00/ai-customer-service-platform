@@ -230,7 +230,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     session.setLastCallerActivityMs(System.currentTimeMillis());
                                     session.setSilenceNudgedAtMs(0L);
 
-                                    if (configs.getBarge().isEnabled()) {
+                                    if (serviceConfiguration.getBarge().isEnabled()) {
                                         bargeHandler.checkAndBarge(session, event2);
                                     }
 
