@@ -22,6 +22,7 @@ public class ServiceConfiguration {
     private Deepgram deepgram;
     private Filler filler = new Filler();
     private Silence silence = new Silence();
+    private Barge barge = new Barge();
 
     @Data
     public static class Silence {
@@ -81,6 +82,11 @@ public class ServiceConfiguration {
          *  check" — that just adds dead air to a turn the LLM will
          *  answer in <1 second anyway. */
         private int minUtteranceChars = 25;
+    }
+
+    @Data
+    public static class Barge {
+        private boolean enabled = true;
     }
 
     @Data

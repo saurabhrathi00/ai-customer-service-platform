@@ -230,13 +230,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     session.setLastCallerActivityMs(System.currentTimeMillis());
                                     session.setSilenceNudgedAtMs(0L);
 
-                                    // Barge-in: BargeInHandler runs three gates
-                                    // (bot speaking, length, confidence) on every
-                                    // STT event — interim or final — and on the
-                                    // first hit per utterance fires three
-                                    // cancellations (Twilio clear, ai-conv
-                                    // BARGE_IN, local TTS epoch bump).
-                                    bargeHandler.checkAndBarge(session, event2);
+                                    if (configs.getBarge().isEnabled()) {
+                                        bargeHandler.checkAndBarge(session, event2);
+                                    }
 
                                     if (!event2.isFinal()) return;
 
