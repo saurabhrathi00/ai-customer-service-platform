@@ -7,6 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +22,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * reply is queued behind it on the per-call serial TTS chain and starts
  * playing as soon as the filler finishes.
  *
+ * <p>Audio is cached on disk after the first synthesis in a folder structure:
+ * {@code /app/filler-cache/{voiceId}/{language}/{category}_{index}.mulaw}.
+ * Subsequent startups load from disk — no TTS API calls unless the cache
+ * is missing or the voice/phrases changed.
+ *
  * <p>Disabled by default. Flip {@code configs.filler.enabled=true} to
  * activate. Phrases and the minimum gap between fillers are configurable
  * under {@code configs.filler.*}.
@@ -28,14 +36,11 @@ import java.util.concurrent.ThreadLocalRandom;
 public class FillerAudioCache {
 
     private static final Logger log = LoggerFactory.getLogger(FillerAudioCache.class);
+    private static final Path BASE_CACHE_DIR = Path.of("/app/filler-cache");
 
     private final ServiceConfiguration configs;
     private final TextToSpeechProvider tts;
 
-    /** Pre-encoded mu-law @ 8 kHz, ready to chunk into Twilio frames.
-     *  Two pools per language: "thinking" (for questions) and "ack" (for
-     *  statements). Statement ack clips skip the "let me check" framing
-     *  which sounds wrong after a declarative utterance. */
     private List<byte[]> enClips = List.of();
     private List<byte[]> hiClips = List.of();
     private List<byte[]> enAckClips = List.of();
@@ -48,29 +53,74 @@ public class FillerAudioCache {
             log.info("[filler] disabled — skipping pre-synthesis");
             return;
         }
-        enClips    = synth(cfg.getPhrasesEn(), "en");
-        hiClips    = synth(cfg.getPhrasesHi(), "hi");
-        enAckClips = synth(cfg.getAckPhrasesEn(), "en");
-        hiAckClips = synth(cfg.getAckPhrasesHi(), "hi");
+
+        String voiceId = configs.getElevenlabs().getTtsVoiceId();
+        if (voiceId == null || voiceId.isBlank()) voiceId = "default";
+
+        enClips    = loadOrSynth(cfg.getPhrasesEn(), "en", "thinking", voiceId);
+        hiClips    = loadOrSynth(cfg.getPhrasesHi(), "hi", "thinking", voiceId);
+        enAckClips = loadOrSynth(cfg.getAckPhrasesEn(), "en", "ack", voiceId);
+        hiAckClips = loadOrSynth(cfg.getAckPhrasesHi(), "hi", "ack", voiceId);
         log.info("[filler] cached thinking: en={} hi={} | ack: en={} hi={}",
                 enClips.size(), hiClips.size(), enAckClips.size(), hiAckClips.size());
     }
 
-    private List<byte[]> synth(List<String> phrases, String lang) {
+    private List<byte[]> loadOrSynth(List<String> phrases, String lang, String category, String voiceId) {
         List<byte[]> out = new ArrayList<>();
         if (phrases == null) return out;
-        for (String p : phrases) {
+
+        Path dir = BASE_CACHE_DIR.resolve(voiceId).resolve(lang);
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException e) {
+            log.warn("[filler] cannot create cache dir {}: {}", dir, e.getMessage());
+        }
+
+        for (int i = 0; i < phrases.size(); i++) {
+            String p = phrases.get(i);
             if (p == null || p.isBlank()) continue;
+
+            Path cached = dir.resolve(category + "_" + i + ".mulaw");
+            byte[] mulaw = loadFromDisk(cached);
+            if (mulaw != null) {
+                out.add(mulaw);
+                continue;
+            }
             try {
-                byte[] mulaw = tts.synthesize(p,
-                        VoiceProfile.builder().language(lang).build());
-                if (mulaw != null && mulaw.length > 0) out.add(mulaw);
+                mulaw = tts.synthesize(p, VoiceProfile.builder().language(lang).build());
+                if (mulaw != null && mulaw.length > 0) {
+                    out.add(mulaw);
+                    saveToDisk(cached, mulaw);
+                }
             } catch (Exception ex) {
                 log.warn("[filler] failed to synthesise \"{}\" ({}): {}",
                         p, lang, ex.getMessage());
             }
         }
         return out;
+    }
+
+    private byte[] loadFromDisk(Path path) {
+        if (!Files.exists(path)) return null;
+        try {
+            byte[] data = Files.readAllBytes(path);
+            if (data.length > 0) {
+                log.debug("[filler] loaded from disk: {}", path);
+                return data;
+            }
+        } catch (IOException e) {
+            log.warn("[filler] failed to read cache file {}: {}", path, e.getMessage());
+        }
+        return null;
+    }
+
+    private void saveToDisk(Path path, byte[] data) {
+        try {
+            Files.write(path, data);
+            log.debug("[filler] saved to disk: {}", path);
+        } catch (IOException e) {
+            log.warn("[filler] failed to write cache file {}: {}", path, e.getMessage());
+        }
     }
 
     public boolean isEnabled() {
@@ -95,18 +145,12 @@ public class FillerAudioCache {
         return cfg == null ? 25 : cfg.getMinUtteranceChars();
     }
 
-    /** Pick a random clip in the language the caller actually used. NO
-     *  cross-language fallback — if we can't match, we play nothing rather
-     *  than answering a Hindi caller in English (and vice versa). Returns
-     *  {@code null} when no matching clip is cached. */
     public byte[] pickForText(String text) {
-        return pickFromPool(text, /*ack=*/false);
+        return pickFromPool(text, false);
     }
 
-    /** Pick a short acknowledgement clip ("Got it", "Samjh gaya") — used
-     *  when the caller's utterance was a statement, not a question. */
     public byte[] pickAckForText(String text) {
-        return pickFromPool(text, /*ack=*/true);
+        return pickFromPool(text, true);
     }
 
     private byte[] pickFromPool(String text, boolean ack) {
@@ -118,10 +162,6 @@ public class FillerAudioCache {
         return pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
     }
 
-    /** Hindi-only tokens. Words that collide with English ("to", "se",
-     *  "ka", "ke", "do", "or") are deliberately EXCLUDED — they trigger
-     *  false positives on plain English sentences (e.g. "I want TO know"
-     *  was misclassified as Hindi and got a Hindi filler). */
     private static final java.util.Set<String> HINDI_TOKENS = java.util.Set.of(
             "haan", "nahi", "nahin", "kya", "kaise", "kahan", "kab", "kyun",
             "kyon", "kyu", "kaisa", "kaisi",
@@ -140,13 +180,9 @@ public class FillerAudioCache {
             "milega", "milegi", "kha", "khao", "kuch", "koi",
             "thoda", "thodi", "zyada", "kam");
 
-    /** Returns true only when the text contains Devanagari OR at least
-     *  TWO distinct Hindi-only tokens. Single-token matches (often
-     *  ambiguous loanwords) are not enough. */
     public static boolean looksHindi(String text) {
         if (text == null || text.isBlank()) return false;
         String lower = text.toLowerCase(Locale.ROOT);
-        // Devanagari range — definitive.
         for (int i = 0; i < lower.length(); i++) {
             char c = lower.charAt(i);
             if (c >= 'ऀ' && c <= 'ॿ') return true;

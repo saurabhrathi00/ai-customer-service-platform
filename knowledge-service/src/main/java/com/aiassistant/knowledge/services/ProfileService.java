@@ -43,7 +43,7 @@ public class ProfileService {
 
     public ProfileResponse get(String businessId) {
         BusinessProfileEntity entity = profileRepository.findByBusinessId(businessId)
-                .orElseThrow(() -> new NotFoundException("Profile not found for business: " + businessId));
+                .orElseGet(() -> BusinessProfileEntity.builder().businessId(businessId).build());
         return mapper.toResponse(entity);
     }
 

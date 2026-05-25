@@ -29,6 +29,7 @@ networks:
 volumes:
   caddy_data:       # persistent Let's Encrypt certs + ACME state
   caddy_config:
+  filler_audio_cache:  # pre-synthesised filler clips — survives restarts
 
 services:
 
@@ -198,6 +199,7 @@ services:
       CONFIGS_CONVERSATIONSUMMARYSERVICE_BASEURL: http://conversation-summary-service:8089/conversation-summary-service
     volumes:
       - /etc/secrets/call-orchestration-service/secrets.properties:/etc/secrets/secrets.properties:ro
+      - filler_audio_cache:/app/filler-cache
     networks:
       - backend
     depends_on:
