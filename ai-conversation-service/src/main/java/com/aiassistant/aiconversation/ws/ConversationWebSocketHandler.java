@@ -540,7 +540,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         state.forwardedUpto = emitUpto;
 
         for (String piece : splitIntoChunks(segment)) {
-            String trimmed = piece.strip();
+            String trimmed = stripNameTag(piece.strip());
             if (trimmed.isEmpty()) continue;
             send(ws, OutboundFrames.ResponseDelta.builder()
                     .conversationId(session.getConversationId())
@@ -562,6 +562,23 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
             if (isSentenceEnd(s.charAt(i))) return i + 1;
         }
         return from;
+    }
+
+    private static final java.util.regex.Pattern NAME_TAG =
+            java.util.regex.Pattern.compile("\\{NAME\\}\\|[^{}]*$");
+
+    private static String stripNameTag(String s) {
+        return NAME_TAG.matcher(s).replaceAll("").strip();
+    }
+
+    private static String extractName(String s) {
+        java.util.regex.Matcher m = NAME_TAG.matcher(s);
+        if (m.find()) {
+            String tag = m.group();
+            int pipe = tag.indexOf('|');
+            return pipe >= 0 && pipe + 1 < tag.length() ? tag.substring(pipe + 1).strip() : null;
+        }
+        return null;
     }
 
     private static java.util.List<String> splitIntoChunks(String s) {
@@ -633,7 +650,12 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // Normal reply — make sure anything still buffered is forwarded.
         if (state.mode == Mode.UNKNOWN) state.mode = Mode.NORMAL;
         flushNormalDeltas(ws, session, state, true);
-        session.appendAssistant(full);
+        String callerName = extractName(full);
+        if (callerName != null && !callerName.isBlank()) {
+            session.setCallerName(callerName);
+            log.info("[name-capture] conversationId={} name={}", session.getConversationId(), callerName);
+        }
+        session.appendAssistant(stripNameTag(full));
         send(ws, OutboundFrames.ResponseDone.builder()
                 .conversationId(session.getConversationId())
                 .replyToMessageId(state.replyToMessageId)

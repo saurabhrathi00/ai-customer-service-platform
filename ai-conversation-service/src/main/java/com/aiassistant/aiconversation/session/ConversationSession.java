@@ -48,6 +48,9 @@ public class ConversationSession {
      *  canned text for UNCLEAR / greeting paths without an LLM hop. */
     @Setter private volatile String language;
 
+    /** Caller's name, captured from the {NAME}|<name> tag in the LLM reply. */
+    @Setter private volatile String callerName;
+
     /** Reactor Disposable for the currently-streaming LLM turn (if any).
      *  When a new MESSAGE arrives the handler disposes this — that propagates
      *  cancellation upstream to the Gemini HTTP stream so the model stops
