@@ -526,6 +526,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         /** Number of fillers queued so far for the in-flight user turn. */
         private final java.util.concurrent.atomic.AtomicInteger fillerChainCount =
                 new java.util.concurrent.atomic.AtomicInteger(0);
+        /** Epoch snapshot when the current filler chain started. If barge-in
+         *  bumps the epoch, chainTick sees the mismatch and stops chaining. */
+        private volatile long fillerChainEpoch = 0L;
 
         /**
          * Play a cached "thinking" clip in the caller's language IF:
@@ -566,6 +569,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             // chaining "Got it... Noted... Understood..." would feel awful.
             replyStartedForTurn.set(false);
             fillerChainCount.set(0);
+            fillerChainEpoch = session.getTtsEpoch().get();
             if (isQuestion) {
                 queueChainedFiller(sttText, clip);
             } else {
@@ -573,7 +577,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 log.debug("[filler] ack queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
                         session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
                         FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
-                queueRawAudio(clip, "ack", delay, /*countAsBotSpeaking=*/false);
+                queueRawAudio(clip, "ack", delay, /*countAsBotSpeaking=*/true);
             }
         }
 
@@ -588,11 +592,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             log.debug("[filler] chain={} queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
                     idx, session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
                     FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
-            // Filler is a "thinking sound" — it should NOT count as interruptible
-            // bot speech. If we let it bump the bot-speaking signals, then user
-            // interim partials arriving right after the filler trigger a barge,
-            // which cancels the in-flight LLM and the caller never hears a reply.
-            queueRawAudio(clip, "filler-" + idx, delay, /*countAsBotSpeaking=*/false);
+            queueRawAudio(clip, "filler-" + idx, delay, /*countAsBotSpeaking=*/true);
 
             // mu-law @ 8kHz = 8 bytes per ms. Schedule the next-check a touch
             // after this clip finishes so the chain doesn't overlap itself.
@@ -606,6 +606,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void chainTick(String sttText) {
             if (replyStartedForTurn.get()) return;          // reply arrived — chain done
             if (session.getEndingCall().get()) return;      // call winding down — drop
+            if (session.getTtsEpoch().get() != fillerChainEpoch) return; // barged — stop chain
             if (fillerChainCount.get() >= FILLER_CHAIN_MAX) {
                 log.warn("[filler-chain] exhausted callId={} after {} fillers — firing fallback",
                         session.getCallId(), FILLER_CHAIN_MAX);
