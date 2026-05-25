@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowRight } from 'lucide-react';
+import * as React from 'react';
 
 import { Logo } from '@/components/app/Logo';
 import { Button } from '@/components/ui/Button';
@@ -38,17 +39,27 @@ export default function RegisterPage() {
     },
   });
 
+  const [error, setError] = React.useState<string | null>(null);
+
   const mutation = useMutation({
     mutationFn: async (v: Values) => {
-      // Backend rejects empty-string whatsapp; send undefined when blank.
       const payload = { ...v, whatsappNumber: v.whatsappNumber?.trim() || undefined };
       await business.register(payload);
       return auth.signin(v.email, v.password);
     },
     onSuccess: (data) => {
+      setError(null);
       setTokens(data.token, data.refreshToken);
       toast.success('Account created. Welcome!');
       navigate('/', { replace: true });
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Registration failed. Please try again.';
+      setError(msg);
     },
   });
 
@@ -98,6 +109,12 @@ export default function RegisterPage() {
               {...form.register('whatsappNumber')}
             />
           </Field>
+
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
 
           <Button type="submit" loading={mutation.isPending} className="w-full mt-2">
             Create account <ArrowRight className="h-4 w-4" />

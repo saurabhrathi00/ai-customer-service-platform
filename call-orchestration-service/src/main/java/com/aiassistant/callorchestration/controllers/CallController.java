@@ -5,6 +5,7 @@ import com.aiassistant.callorchestration.services.CallLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,5 +24,13 @@ public class CallController {
     @PreAuthorize("hasAuthority('SCOPE_calls.read') and @businessAccessGuard.canAccess(#businessId)")
     public ResponseEntity<List<CallLogResponse>> recent(@PathVariable("businessId") String businessId) {
         return ResponseEntity.ok(callLogService.listRecent(businessId));
+    }
+
+    @DeleteMapping("/{businessId}/{callId}")
+    @PreAuthorize("hasAuthority('SCOPE_calls.read') and @businessAccessGuard.canAccess(#businessId)")
+    public ResponseEntity<Void> delete(@PathVariable("businessId") String businessId,
+                                       @PathVariable("callId") String callId) {
+        callLogService.delete(callId, businessId);
+        return ResponseEntity.noContent().build();
     }
 }

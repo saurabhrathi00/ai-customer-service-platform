@@ -60,3 +60,10 @@ export function isAuthenticated() {
   if (!claims?.exp) return false;
   return claims.exp * 1000 > Date.now();
 }
+
+export function isAdmin() {
+  const token = useAuthStore.getState().accessToken;
+  if (!token) return false;
+  const claims = decodeJwt<JwtClaims>(token);
+  return claims?.roles?.includes('ROLE_BUSINESS_ADMIN') ?? false;
+}

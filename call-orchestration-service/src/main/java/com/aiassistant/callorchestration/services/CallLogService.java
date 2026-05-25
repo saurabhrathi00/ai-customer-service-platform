@@ -46,6 +46,14 @@ public class CallLogService {
     }
 
     @Transactional
+    public void delete(String callId, String businessId) {
+        CallLogEntity entity = callLogRepository.findByIdAndBusinessId(callId, businessId)
+                .orElseThrow(() -> new CallNotFoundException("Call not found: " + callId));
+        callLogRepository.delete(entity);
+        log.info("Deleted call callId={} businessId={}", callId, businessId);
+    }
+
+    @Transactional
     public CallLogResponse updateFeedback(String callId, UpdateFeedbackRequest request) {
         CallLogEntity entity = callLogRepository.findByIdAndBusinessId(callId, request.getBusinessId())
                 .orElseThrow(() -> new CallNotFoundException("Call not found: " + callId));

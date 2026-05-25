@@ -231,7 +231,7 @@ export default function DashboardPage() {
                             {callback && <Badge variant="warning">Callback</Badge>}
                             {interest != null && (
                               <Badge variant={interestColor(interest) as never}>
-                                {interest} ★
+                                {interest}/10 ★
                               </Badge>
                             )}
                             {fb && <Badge variant={fb.variant}>{fb.label}</Badge>}

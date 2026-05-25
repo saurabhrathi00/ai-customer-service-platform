@@ -1,5 +1,6 @@
-import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Phone,
@@ -13,6 +14,7 @@ import {
   User,
   HelpCircle,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -22,7 +24,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { calls } from '@/api/resources';
-import { useAuthStore } from '@/store/auth';
+import { isAdmin, useAuthStore } from '@/store/auth';
 import {
   callDuration,
   interestColor,
@@ -35,6 +37,9 @@ import { useSummariesByCallId } from '@/features/calls/useSummaries';
 export default function CallDetailPage() {
   const { callId } = useParams<{ callId: string }>();
   const businessId = useAuthStore((s) => s.businessId);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // The backend doesn't expose a per-call GET, so reuse the recent list and
   // pick the row by id. With more data this would be a dedicated endpoint.
@@ -44,6 +49,14 @@ export default function CallDetailPage() {
     enabled: Boolean(businessId),
   });
   const call = q.data?.find((c) => c.id === callId);
+
+  const deleteMutation = useMutation({
+    mutationFn: () => calls.delete(businessId!, callId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calls'] });
+      navigate('/calls');
+    },
+  });
 
   const { map: summaryMap } = useSummariesByCallId();
   const summary = call ? summaryMap.get(call.id) : undefined;
@@ -61,12 +74,41 @@ export default function CallDetailPage() {
         title="Call detail"
         subtitle={call ? format(new Date(call.callStartedAt), 'EEEE, MMM d · HH:mm') : undefined}
         actions={
-          <Link
-            to="/calls"
-            className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Link>
+          <div className="flex items-center gap-3">
+            {call && isAdmin() && (
+              confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-destructive">Delete this call?</span>
+                  <button
+                    onClick={() => deleteMutation.mutate()}
+                    disabled={deleteMutation.isPending}
+                    className="inline-flex items-center gap-1 rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                  >
+                    {deleteMutation.isPending ? 'Deleting…' : 'Yes, delete'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="text-sm font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
+              )
+            )}
+            <Link
+              to="/calls"
+              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </Link>
+          </div>
         }
       />
       <PageBody>
@@ -201,7 +243,7 @@ export default function CallDetailPage() {
                     value={
                       interestRating != null ? (
                         <Badge variant={interestColor(interestRating) as never}>
-                          {interestRating} ★
+                          {interestRating}/10 ★
                         </Badge>
                       ) : (
                         '—'

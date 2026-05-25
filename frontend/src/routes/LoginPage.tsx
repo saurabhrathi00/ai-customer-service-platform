@@ -30,12 +30,23 @@ export default function LoginPage() {
     defaultValues: { email: '', password: '' },
   });
 
+  const [error, setError] = React.useState<string | null>(null);
+
   const mutation = useMutation({
     mutationFn: (v: Values) => auth.signin(v.email, v.password),
     onSuccess: (data) => {
+      setError(null);
       setTokens(data.token, data.refreshToken);
       toast.success('Welcome back');
       navigate('/', { replace: true });
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Sign in failed. Please try again.';
+      setError(msg);
     },
   });
 
@@ -132,6 +143,12 @@ export default function LoginPage() {
                 )}
               </div>
             </div>
+
+            {error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
 
             <Button type="submit" loading={mutation.isPending} className="w-full">
               Sign in <ArrowRight className="h-4 w-4" />

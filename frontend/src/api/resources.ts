@@ -129,6 +129,9 @@ export const knowledge = {
 export const calls = {
   recent: (businessId: string) =>
     callsApi.get<CallLogResponse[]>(`/calls/${businessId}/recent`).then((r) => r.data),
+
+  delete: (businessId: string, callId: string) =>
+    callsApi.delete<void>(`/calls/${businessId}/${callId}`).then((r) => r.data),
 };
 
 // ---------- leads ----------
