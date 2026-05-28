@@ -25,4 +25,11 @@ public interface TelephonyProvider {
     TelephonyResponse buildStreamHandoff(StreamHandoff handoff);
 
     TelephonyResponse buildUnknownNumberResponse();
+
+    /**
+     * Post-response hook for providers that need outbound API calls after
+     * acknowledging the webhook (e.g. EnableX accept + stream).
+     * Runs after the HTTP response is committed to the caller.
+     */
+    default void afterHandoff(StreamHandoff handoff) { }
 }

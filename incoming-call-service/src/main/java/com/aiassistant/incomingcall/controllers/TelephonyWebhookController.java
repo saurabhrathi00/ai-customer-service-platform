@@ -45,6 +45,14 @@ public class TelephonyWebhookController {
                 call.getToNumber(), call.getCallStatus());
 
         TelephonyResponse response;
+        StreamHandoff handoff = null;
+        if (call.getToNumber() == null || call.getToNumber().isBlank()) {
+            log.info("No 'to' number — returning fallback (provider={})", provider.name());
+            response = provider.buildUnknownNumberResponse();
+            return ResponseEntity.ok()
+                    .contentType(response.getContentType())
+                    .body(response.getBody());
+        }
         try {
             BusinessLookupResponse business = businessLookupService.lookupByTwilioNumber(call.getToNumber());
             if (business == null) {
@@ -60,7 +68,7 @@ public class TelephonyWebhookController {
                         call.getToNumber(), business.getBusinessId(),
                         business.getName(), business.getIsActive());
 
-                StreamHandoff handoff = StreamHandoff.builder()
+                handoff = StreamHandoff.builder()
                         .callId(call.getCallId())
                         .businessId(business.getBusinessId())
                         .businessName(business.getName())
@@ -73,6 +81,10 @@ public class TelephonyWebhookController {
             log.warn("No business mapped to To={} (provider={}), returning fallback",
                     call.getToNumber(), provider.name());
             response = provider.buildUnknownNumberResponse();
+        }
+
+        if (handoff != null) {
+            provider.afterHandoff(handoff);
         }
 
         return ResponseEntity.ok()

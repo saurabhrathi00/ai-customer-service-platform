@@ -10,12 +10,19 @@ import org.springframework.context.annotation.Configuration;
 public class SecretsConfiguration {
 
     private Twilio twilio;
+    private EnableX enablex;
     private AuthService authService;
 
     @Data
     public static class Twilio {
         private String accountSid;
         private String authToken;
+    }
+
+    @Data
+    public static class EnableX {
+        private String appId;
+        private String appKey;
     }
 
     @Data

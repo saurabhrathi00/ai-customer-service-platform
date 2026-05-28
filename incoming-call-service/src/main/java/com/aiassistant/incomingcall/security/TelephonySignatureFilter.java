@@ -35,14 +35,14 @@ public class TelephonySignatureFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !WEBHOOK_PATH.matcher(request.getRequestURI()).matches();
+        return !WEBHOOK_PATH.matcher(request.getServletPath()).matches();
     }
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain chain) throws ServletException, IOException {
-        Matcher m = WEBHOOK_PATH.matcher(request.getRequestURI());
+        Matcher m = WEBHOOK_PATH.matcher(request.getServletPath());
         if (!m.matches()) {
             chain.doFilter(request, response);
             return;

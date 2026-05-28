@@ -42,4 +42,15 @@ public class HttpClientConfig {
                 .requestFactory(timedRequestFactory())
                 .build();
     }
+
+    @Bean(name = "enablexRestClient")
+    public RestClient enablexRestClient(SecretsConfiguration secrets) {
+        return RestClient.builder()
+                .baseUrl(serviceConfiguration.getEnablexApi().getBaseUrl())
+                .defaultHeaders(headers -> headers.setBasicAuth(
+                        secrets.getEnablex().getAppId(),
+                        secrets.getEnablex().getAppKey()))
+                .requestFactory(timedRequestFactory())
+                .build();
+    }
 }

@@ -13,6 +13,7 @@ public class ServiceConfiguration {
     private AuthService authService;
     private CallOrchestration callOrchestration;
     private TwilioPreRoll twilioPreRoll;
+    private EnableXApi enablexApi;
 
     @Data
     public static class UserBusinessService {
@@ -42,6 +43,11 @@ public class ServiceConfiguration {
         private String text;
         private String voice;
         private String language;
+    }
+
+    @Data
+    public static class EnableXApi {
+        private String baseUrl = "https://api.enablex.io";
     }
 
 }
