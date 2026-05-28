@@ -157,11 +157,6 @@ public class CallSession {
     @Builder.Default
     private volatile long turnStartMs = 0L;
 
-    /** Per-call TTS speed. Initialised from config; adjusted at runtime when
-     *  the caller asks to speed up / slow down. ElevenLabs range: 0.7–1.2. */
-    @Builder.Default
-    private volatile double ttsSpeed = 1.0;
-
     @Data
     @Builder
     @NoArgsConstructor

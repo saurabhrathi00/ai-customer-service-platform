@@ -193,6 +193,5 @@ public class ServiceConfiguration {
         private Double ttsSimilarityBoost;
         private Double ttsStyle;
         private Boolean ttsUseSpeakerBoost;
-        private Double ttsSpeed;
     }
 }

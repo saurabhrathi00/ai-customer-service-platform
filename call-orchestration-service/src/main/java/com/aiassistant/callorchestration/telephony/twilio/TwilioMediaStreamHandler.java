@@ -719,37 +719,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             playTroubleFallback();
         }
 
-        private static final java.util.regex.Pattern SPEED_TAG =
-                java.util.regex.Pattern.compile("\\{SPEED\\}\\|(faster|slower)");
-        private static final java.util.regex.Pattern NAME_TAG =
-                java.util.regex.Pattern.compile("\\{NAME\\}\\|[^{}]*$");
-        private static final double SPEED_STEP = 0.1;
-        private static final double SPEED_MIN = 0.7;
-        private static final double SPEED_MAX = 1.2;
-
-        private String stripInlineTags(String callId, String text) {
-            java.util.regex.Matcher sm = SPEED_TAG.matcher(text);
-            if (sm.find()) {
-                String dir = sm.group(1);
-                double cur = session.getTtsSpeed();
-                double next = "faster".equals(dir)
-                        ? Math.min(cur + SPEED_STEP, SPEED_MAX)
-                        : Math.max(cur - SPEED_STEP, SPEED_MIN);
-                next = Math.round(next * 10.0) / 10.0;
-                session.setTtsSpeed(next);
-                log.info("[speed] callId={} {} → {}", callId, dir, next);
-                text = sm.replaceAll("").strip();
-            }
-            text = NAME_TAG.matcher(text).replaceAll("").strip();
-            return text;
-        }
-
         /** Queue text behind any in-flight TTS work for this call so audio
          *  frames are produced and sent strictly in arrival order. */
         private void synthesize(String callId, String text) {
-            text = stripInlineTags(callId, text);
-            if (text.isEmpty()) return;
-
             String streamSid = (String) session.getProviderAttributes().get("streamSid");
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) {
@@ -758,11 +730,10 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 return;
             }
 
-            final String ttsText = text;
             long epochAtSubmit = session.getTtsEpoch().get();
             log.debug("[tts] QUEUE callId={} epoch={} chars={} text=\"{}\"",
-                    callId, epochAtSubmit, ttsText.length(),
-                    ttsText.length() > 80 ? ttsText.substring(0, 80) + "…" : ttsText);
+                    callId, epochAtSubmit, text.length(),
+                    text.length() > 80 ? text.substring(0, 80) + "…" : text);
 
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
                 if (!ws.isOpen()) {
@@ -776,6 +747,9 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 }
                 int prevInFlight = session.getTtsInFlight().getAndIncrement();
                 if (prevInFlight == 0) {
+                    // Bot just transitioned silent → speaking. If it's been
+                    // silent for more than BURST_GAP_MS, this is a NEW burst
+                    // (e.g. fresh reply turn) — reset the grace clock.
                     long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
                     if (sinceLast > BURST_GAP_MS) {
                         session.setBotSpeakingStartMs(System.currentTimeMillis());
@@ -786,11 +760,8 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     log.debug("[tts] START callId={} epoch={} (calling ElevenLabs)", callId, epochAtSubmit);
-                    textToSpeechProvider.synthesizeStream(ttsText,
-                            VoiceProfile.builder()
-                                    .language(session.getLanguage())
-                                    .speakingRate(session.getTtsSpeed())
-                                    .build(),
+                    textToSpeechProvider.synthesizeStream(text,
+                            VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
                                 if (session.getTtsEpoch().get() != epochAtSubmit) {
                                     throw new BargeInAbortException();
@@ -870,10 +841,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                         Base64.Encoder b64 = Base64.getEncoder();
                         long[] bytes = {0L};
                         textToSpeechProvider.synthesizeStream(spokenText,
-                                VoiceProfile.builder()
-                                        .language(session.getLanguage())
-                                        .speakingRate(session.getTtsSpeed())
-                                        .build(),
+                                VoiceProfile.builder().language(session.getLanguage()).build(),
                                 chunk -> {
                                     bytes[0] += chunk.length;
                                     sendMediaChunk(ws, streamSid, b64, chunk);
