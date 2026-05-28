@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 import java.util.Map;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "secrets.enablex", name = "appId")
 public class EnableXApiClient {
 
     private static final Logger log = LoggerFactory.getLogger(EnableXApiClient.class);

@@ -44,6 +44,8 @@ public class HttpClientConfig {
     }
 
     @Bean(name = "enablexRestClient")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            prefix = "secrets.enablex", name = "appId")
     public RestClient enablexRestClient(SecretsConfiguration secrets) {
         return RestClient.builder()
                 .baseUrl(serviceConfiguration.getEnablexApi().getBaseUrl())

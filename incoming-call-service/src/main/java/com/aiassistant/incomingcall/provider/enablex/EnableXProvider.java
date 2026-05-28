@@ -26,6 +26,8 @@ import java.util.concurrent.CompletableFuture;
 
 @Component
 @RequiredArgsConstructor
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "secrets.enablex", name = "appId")
 public class EnableXProvider implements TelephonyProvider {
 
     private static final Logger log = LoggerFactory.getLogger(EnableXProvider.class);
