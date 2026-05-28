@@ -3,6 +3,7 @@ package com.aiassistant.callorchestration.transcription.elevenlabs;
 import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
 import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
+import com.aiassistant.callorchestration.transcription.DevanagariTransliterator;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
 import com.aiassistant.callorchestration.transcription.SttSession;
 import com.aiassistant.callorchestration.transcription.TranscriptEvent;
@@ -331,7 +332,8 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                                 log.debug("[stt] PARTIAL  callId={} conf={} text=\"{}\"",
                                         callId, conf, text);
                             }
-                            sink.accept(new TranscriptEvent(text, false, conf));
+                            sink.accept(new TranscriptEvent(
+                                    DevanagariTransliterator.transliterate(text), false, conf));
                         }
                     }
                     case "committed_transcript", "committed_transcript_with_timestamps" -> {
@@ -356,7 +358,8 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                         lastFinalAtMs = now;
                         log.debug("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
                                 callId, conf, messageType, text);
-                        sink.accept(new TranscriptEvent(text, true, conf));
+                        sink.accept(new TranscriptEvent(
+                                DevanagariTransliterator.transliterate(text), true, conf));
                     }
                     case "error", "auth_error", "quota_exceeded", "rate_limited",
                          "input_error", "chunk_size_exceeded", "transcriber_error" ->
