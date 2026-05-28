@@ -50,7 +50,7 @@ public class ConversationCoordinator {
      *  pauses inside a single user thought no longer get treated as
      *  separate turns. Tuned higher (1.5s) after callers complained the
      *  bot started replying on top of their mid-sentence pauses. */
-    private static final long UTTERANCE_FLUSH_DELAY_MS = 1500L;
+    private static final long UTTERANCE_FLUSH_DELAY_MS = 0L;
 
     private final java.util.concurrent.ConcurrentMap<String, CallEventListener> listeners
             = new java.util.concurrent.ConcurrentHashMap<>();
