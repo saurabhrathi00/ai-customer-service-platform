@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { Logo } from './Logo';
+import { SessionExpiryGuard } from './SessionExpiryGuard';
 import { useTheme } from './ThemeProvider';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/Button';
@@ -59,6 +60,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <SessionExpiryGuard />
       {/* Mobile top bar */}
       <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur px-4">
         <Logo />
