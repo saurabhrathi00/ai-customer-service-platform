@@ -766,6 +766,10 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                 if (session.getTtsEpoch().get() != epochAtSubmit) {
                                     throw new BargeInAbortException();
                                 }
+                                if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
+                                    long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
+                                    log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                }
                                 BargeInHandler.noteTtsChunkSent(session);
                                 totalBytes[0] += chunk.length;
                                 sendMediaChunk(ws, streamSid, b64, chunk);

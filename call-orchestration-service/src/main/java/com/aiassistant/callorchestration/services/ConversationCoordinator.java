@@ -216,10 +216,8 @@ public class ConversationCoordinator {
             return;
         }
 
-        // Debounce: buffer this FINAL, reset the flush timer. If another
-        // FINAL lands within UTTERANCE_FLUSH_DELAY_MS we append + reset
-        // again. When silence outlasts the window, flushPendingUtterance
-        // ships everything as one MESSAGE.
+        session.setTurnStartMs(System.currentTimeMillis());
+        log.info("[latency] STT-FINAL callId={} text=\"{}\"", callId, text);
         appendAndScheduleFlush(session, text);
     }
 
@@ -259,8 +257,9 @@ public class ConversationCoordinator {
                 .speaker("customer").text(full).timestamp(Instant.now()).build());
         session.setActiveMessageId(messageId);
         log.debug("[conv] callId={} CUSTOMER → \"{}\"", session.getCallId(), full);
-        log.debug("[ai-req] callId={} msgId={} MESSAGE sent to ai-conv (debounced)",
-                session.getCallId(), messageId);
+        long sinceSTT = session.getTurnStartMs() > 0 ? System.currentTimeMillis() - session.getTurnStartMs() : -1;
+        log.info("[latency] LLM-SENT callId={} msgId={} sttToLlm={}ms",
+                session.getCallId(), messageId, sinceSTT);
         sendUserMessageWithReadinessWait(session.getConversationId(), messageId, full,
                 session.getCallId());
     }
@@ -421,6 +420,10 @@ public class ConversationCoordinator {
             }
             log.debug("[ai-resp] DELTA callId={} replyTo={} text=\"{}\"",
                     callId, replyToMessageId, deltaText);
+            if (session != null && streamingAcc.isEmpty()) {
+                long sinceTurn = session.getTurnStartMs() > 0 ? System.currentTimeMillis() - session.getTurnStartMs() : -1;
+                log.info("[latency] LLM-FIRST callId={} sttToFirstToken={}ms", callId, sinceTurn);
+            }
             streamingAcc.append(deltaText);
             dispatch(l -> l.onAiReplyChunk(callId, deltaText));
         }

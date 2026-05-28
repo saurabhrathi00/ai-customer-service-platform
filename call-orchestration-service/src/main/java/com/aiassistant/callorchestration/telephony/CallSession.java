@@ -152,6 +152,11 @@ public class CallSession {
      */
     private volatile String activeMessageId;
 
+    /** Wall-clock ms when the current turn's STT FINAL arrived. Used to
+     *  compute per-stage latency across the STT→LLM→TTS pipeline. */
+    @Builder.Default
+    private volatile long turnStartMs = 0L;
+
     @Data
     @Builder
     @NoArgsConstructor
