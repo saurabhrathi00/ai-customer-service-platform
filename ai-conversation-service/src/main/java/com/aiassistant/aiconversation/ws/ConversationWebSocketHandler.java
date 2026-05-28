@@ -566,8 +566,11 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
     private static final java.util.regex.Pattern NAME_TAG =
             java.util.regex.Pattern.compile("\\{NAME\\}\\|[^{}]*$");
+    private static final java.util.regex.Pattern SPEED_TAG =
+            java.util.regex.Pattern.compile("\\{SPEED\\}\\|(faster|slower)");
 
     private static String stripNameTag(String s) {
+        s = SPEED_TAG.matcher(s).replaceAll("");
         return NAME_TAG.matcher(s).replaceAll("").strip();
     }
 

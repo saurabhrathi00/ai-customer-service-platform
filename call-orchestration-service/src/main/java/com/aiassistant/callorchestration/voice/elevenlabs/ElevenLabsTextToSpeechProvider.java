@@ -107,7 +107,7 @@ public class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
                                 .build(voiceId))
                         .header("xi-api-key", apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body(buildBody(text, modelId, cfg))
+                        .body(buildBody(text, modelId, cfg, voice))
                         .exchange((req, resp) -> {
                             HttpStatusCode code = resp.getStatusCode();
                             if (!code.is2xxSuccessful()) {
@@ -195,7 +195,8 @@ public class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         }
     }
 
-    private static Map<String, Object> buildBody(String text, String modelId, ServiceConfiguration.ElevenLabs cfg) {
+    private static Map<String, Object> buildBody(String text, String modelId,
+                                                    ServiceConfiguration.ElevenLabs cfg, VoiceProfile voice) {
         Map<String, Object> body = new HashMap<>();
         body.put("text", text);
         body.put("model_id", modelId);
@@ -205,6 +206,8 @@ public class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (cfg.getTtsSimilarityBoost() != null) voiceSettings.put("similarity_boost", cfg.getTtsSimilarityBoost());
         if (cfg.getTtsStyle() != null) voiceSettings.put("style", cfg.getTtsStyle());
         if (cfg.getTtsUseSpeakerBoost() != null) voiceSettings.put("use_speaker_boost", cfg.getTtsUseSpeakerBoost());
+        Double speed = (voice != null && voice.getSpeakingRate() != null) ? voice.getSpeakingRate() : cfg.getTtsSpeed();
+        if (speed != null) voiceSettings.put("speed", speed);
         if (!voiceSettings.isEmpty()) body.put("voice_settings", voiceSettings);
 
         return body;

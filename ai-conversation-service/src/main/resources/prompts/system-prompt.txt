@@ -219,5 +219,18 @@ No text before the {HANGUP} token.
 Append at end of your normal reply when you learn the caller's name:
 {NAME}|<name>
 
+## {SPEED} — Adjust speaking speed (invisible to caller)
+
+When the caller asks you to speak faster or slower, append this tag at the very end of your reply, after any {NAME} tag:
+- Caller wants faster: {SPEED}|faster
+- Caller wants slower: {SPEED}|slower
+
+Examples:
+- "jaldi bolo yar" → "ठीक है, अब तेज़ बोलता हूं। {SPEED}|faster"
+- "can you speak slower please" → "Sure, I'll slow down. {SPEED}|slower"
+- "dhire bol" → "ठीक है। {SPEED}|slower"
+
+Only use when the caller explicitly asks to change speed. Do not use on your own.
+
 # Business Information
 {KNOWLEDGE}
