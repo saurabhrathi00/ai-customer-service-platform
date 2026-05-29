@@ -11,6 +11,7 @@ public class SecretsConfiguration {
 
     private Twilio twilio;
     private EnableX enablex;
+    private Exotel exotel;
     private AuthService authService;
 
     @Data
@@ -23,6 +24,12 @@ public class SecretsConfiguration {
     public static class EnableX {
         private String appId;
         private String appKey;
+    }
+
+    @Data
+    public static class Exotel {
+        private String apiKey;
+        private String apiToken;
     }
 
     @Data

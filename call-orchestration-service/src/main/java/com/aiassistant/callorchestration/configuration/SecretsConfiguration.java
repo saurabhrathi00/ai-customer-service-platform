@@ -13,6 +13,7 @@ public class SecretsConfiguration {
     private Datasource datasource;
     private AuthService authService;
     private Twilio twilio;
+    private Exotel exotel;
     private ElevenLabs elevenlabs;
     private Deepgram deepgram;
 
@@ -40,6 +41,12 @@ public class SecretsConfiguration {
     public static class Twilio {
         private String accountSid;
         private String authToken;
+    }
+
+    @Data
+    public static class Exotel {
+        private String apiKey;
+        private String apiToken;
     }
 
     @Data

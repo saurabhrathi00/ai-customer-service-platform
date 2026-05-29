@@ -1,0 +1,632 @@
+package com.aiassistant.callorchestration.telephony.exotel;
+
+import com.aiassistant.callorchestration.clients.ws.AiConversationWsClient;
+import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
+import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
+import com.aiassistant.callorchestration.services.ConversationCoordinator;
+import com.aiassistant.callorchestration.telephony.AudioCodec;
+import com.aiassistant.callorchestration.telephony.BargeInHandler;
+import com.aiassistant.callorchestration.telephony.CallSession;
+import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
+import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
+import com.aiassistant.callorchestration.transcription.SttSession;
+import com.aiassistant.callorchestration.voice.FillerAudioCache;
+import com.aiassistant.callorchestration.voice.TextToSpeechProvider;
+import com.aiassistant.callorchestration.voice.VoiceProfile;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Exotel Voicebot Applet media stream handler. Handles bidirectional
+ * WebSocket audio streaming with Exotel using mu-law 8kHz codec
+ * (same as Twilio — standard telephony G.711).
+ *
+ * <p>Exotel WebSocket frame format:
+ * <ul>
+ *   <li>{@code connected} — WebSocket established</li>
+ *   <li>{@code start} — call metadata (streamSid, encoding, sampleRate)</li>
+ *   <li>{@code media} — base64-encoded audio payload</li>
+ *   <li>{@code stop} — call ended</li>
+ *   <li>{@code dtmf} — keypress events</li>
+ * </ul>
+ */
+@Component
+@RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "secrets.exotel", name = "apiKey")
+public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ExotelMediaStreamHandler.class);
+
+    private final SecretsConfiguration secrets;
+    private final ServiceConfiguration serviceConfiguration;
+    private final SpeechToTextProvider speechToTextProvider;
+    private final TextToSpeechProvider textToSpeechProvider;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConversationCoordinator conversationCoordinator;
+    private final AiConversationWsClient aiConversationWsClient;
+    private final FillerAudioCache fillerAudioCache;
+    @Qualifier("ttsExecutor")
+    private final Executor ttsExecutor;
+    @Qualifier("silenceWatchdogScheduler")
+    private final ScheduledExecutorService silenceWatchdogScheduler;
+
+    private static final int    BARGE_MIN_CHARS = 14;
+    private static final double BARGE_CONF_MIN  = 0.5;
+    private static final long   BARGE_MIN_BOT_SPEAKING_MS = 400L;
+    private static final long   BURST_GAP_MS = 600L;
+    private static final int    MIN_FORWARD_CHARS = 2;
+
+    @Override
+    public String providerId() {
+        return "exotel";
+    }
+
+    @Override
+    public boolean validateHandshake(ServerHttpRequest request) {
+        // Exotel opens this WebSocket after receiving the wss:// URL from our
+        // webhook response. The URL itself is a shared secret (contains the
+        // callId). Optionally validate a token query param if configured.
+        // For now, accept all connections — the webhook already validated the
+        // inbound call and the URL is unguessable (contains the call SID).
+        log.info("[exotel] validating handshake uri={}", request.getURI());
+        return true;
+    }
+
+    @Override
+    public void onConnect(CallSession session, Map<String, String> connectParams) {
+        log.info("[exotel] onConnect callId={}", session.getCallId());
+
+        // Hydrate session from query params passed via the WebSocket URL
+        WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
+        if (ws != null && ws.getUri() != null) {
+            String query = ws.getUri().getQuery();
+            if (query != null) {
+                Map<String, String> params = parseQueryParams(query);
+                if (params.containsKey("businessId"))    session.setBusinessId(params.get("businessId"));
+                if (params.containsKey("businessName"))  session.setBusinessName(params.get("businessName"));
+                if (params.containsKey("customerPhone")) session.setCustomerPhone(params.get("customerPhone"));
+            }
+        }
+    }
+
+    @Override
+    public void onInboundFrame(CallSession session, String payload) {
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            String event = root.path("event").asText("unknown");
+            switch (event) {
+                case "connected" -> log.info("[exotel] <- CONNECTED callId={}", session.getCallId());
+
+                case "start" -> handleStart(session, root);
+
+                case "media" -> {
+                    String b64 = root.path("media").path("payload").asText(null);
+                    if (b64 != null) {
+                        byte[] audio = Base64.getDecoder().decode(b64);
+                        onAudioFrame(session, audio);
+                    }
+                }
+
+                case "stop" -> {
+                    log.info("[exotel] call stopped callId={}", session.getCallId());
+                    cancelSilenceWatchdog(session);
+                    safeEndAiConversation(session.getCallId());
+                }
+
+                case "dtmf" -> log.info("[exotel] DTMF callId={} digit={}",
+                        session.getCallId(), root.path("dtmf").path("digit").asText());
+
+                default -> log.warn("[exotel] <- UNKNOWN event '{}' callId={}", event, session.getCallId());
+            }
+        } catch (Exception ex) {
+            log.error("[exotel] frame parse error callId={} payload={}",
+                    session.getCallId(), payload, ex);
+        }
+    }
+
+    private void handleStart(CallSession session, JsonNode root) {
+        JsonNode start = root.path("start");
+        String streamSid = start.path("streamSid").asText(
+                start.path("stream_sid").asText(session.getCallId()));
+        String callSid = start.path("callSid").asText(
+                start.path("call_sid").asText(session.getCallId()));
+        JsonNode fmt = start.path("mediaFormat");
+        String encoding = fmt.path("encoding").asText("audio/x-mulaw");
+        int sampleRate = fmt.path("sampleRate").asInt(8000);
+
+        session.getProviderAttributes().put("streamSid", streamSid);
+        session.getProviderAttributes().put("exotelCallSid", callSid);
+
+        // Detect codec from encoding field
+        AudioCodec codec = encoding.contains("l16") || encoding.contains("pcm")
+                ? AudioCodec.PCM16 : AudioCodec.MULAW;
+        session.getProviderAttributes().put("codec", codec);
+
+        log.info("[exotel] call started callId={} encoding={} sampleRate={} codec={}",
+                session.getCallId(), encoding, sampleRate, codec);
+
+        // Hydrate from customParameters if present (some Exotel versions include these)
+        JsonNode cp = start.path("customParameters");
+        if (cp != null && !cp.isMissingNode()) {
+            if (cp.hasNonNull("businessId"))    session.setBusinessId(cp.path("businessId").asText());
+            if (cp.hasNonNull("businessName"))  session.setBusinessName(cp.path("businessName").asText());
+            if (cp.hasNonNull("customerPhone")) session.setCustomerPhone(cp.path("customerPhone").asText());
+        }
+
+        BargeInHandler bargeHandler = new BargeInHandler(
+                BARGE_MIN_CHARS, BARGE_CONF_MIN, BARGE_MIN_BOT_SPEAKING_MS,
+                objectMapper, aiConversationWsClient);
+        session.getProviderAttributes().put("bargeInHandler", bargeHandler);
+
+        AiCallEventListener listener = new AiCallEventListener(session);
+        session.getProviderAttributes().put("aiCallListener", listener);
+        session.setLastCallerActivityMs(System.currentTimeMillis());
+        startSilenceWatchdog(session, listener);
+
+        try {
+            conversationCoordinator.onCallStart(session.getCallId(), listener);
+        } catch (Exception ex) {
+            log.error("[exotel] failed to open AI conversation WS callId={}", session.getCallId(), ex);
+            return;
+        }
+
+        try {
+            SttSession stt = speechToTextProvider.openSession(
+                    session.getCallId(), codec, sampleRate,
+                    sttEvent -> {
+                        String text = sttEvent.text();
+                        if (text == null || text.isBlank()) return;
+
+                        if (!session.getGreetingDone().get()) {
+                            log.debug("[stt] dropped during greeting callId={} text=\"{}\"",
+                                    session.getCallId(), text);
+                            return;
+                        }
+
+                        session.setLastCallerActivityMs(System.currentTimeMillis());
+                        session.setSilenceNudgedAtMs(0L);
+
+                        if (serviceConfiguration.getBarge().isEnabled()) {
+                            bargeHandler.checkAndBarge(session, sttEvent);
+                        }
+
+                        if (!sttEvent.isFinal()) return;
+
+                        String trimmed = text.trim();
+                        if (trimmed.length() < MIN_FORWARD_CHARS) {
+                            log.info("[stt] DROP-NOISE callId={} reason=too-short len={} text=\"{}\"",
+                                    session.getCallId(), trimmed.length(), text);
+                            bargeHandler.reset();
+                            return;
+                        }
+
+                        if (fillerAudioCache.isEnabled()) {
+                            AiCallEventListener l = (AiCallEventListener)
+                                    session.getProviderAttributes().get("aiCallListener");
+                            if (l != null) l.maybePlayFiller(text);
+                        }
+                        conversationCoordinator.onCustomerUtterance(
+                                session.getCallId(), text, true);
+                        bargeHandler.reset();
+                    }
+            );
+            session.getProviderAttributes().put("sttSession", stt);
+        } catch (Exception ex) {
+            log.error("[exotel] failed to open STT session callId={}", session.getCallId(), ex);
+        }
+    }
+
+    private void onAudioFrame(CallSession session, byte[] audioPayload) {
+        Object stt = session.getProviderAttributes().get("sttSession");
+        if (stt instanceof SttSession sttSession) {
+            sttSession.pushAudio(audioPayload);
+        }
+        AudioCodec codec = (AudioCodec) session.getProviderAttributes()
+                .getOrDefault("codec", AudioCodec.MULAW);
+        if (session.getGreetingDone().get() && hasVoice(audioPayload, codec)) {
+            session.setLastCallerActivityMs(System.currentTimeMillis());
+            session.setSilenceNudgedAtMs(0L);
+        }
+    }
+
+    private static final int VAD_MIN_VOICE_BYTES = 30;
+    private static boolean hasVoice(byte[] frame, AudioCodec codec) {
+        if (frame == null || frame.length == 0) return false;
+        if (codec == AudioCodec.MULAW) {
+            int nonSilence = 0;
+            for (byte b : frame) {
+                if (b != (byte) 0xFF && b != (byte) 0x7F) {
+                    if (++nonSilence >= VAD_MIN_VOICE_BYTES) return true;
+                }
+            }
+            return false;
+        }
+        // PCM16: silence is near-zero samples. Check 16-bit LE pairs.
+        int threshold = 200;
+        int voiced = 0;
+        for (int i = 0; i + 1 < frame.length; i += 2) {
+            short sample = (short) ((frame[i] & 0xFF) | (frame[i + 1] << 8));
+            if (Math.abs(sample) > threshold) {
+                if (++voiced >= VAD_MIN_VOICE_BYTES / 2) return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void onDisconnect(CallSession session, String reason) {
+        log.info("[exotel] onDisconnect callId={} reason={}", session.getCallId(), reason);
+        cancelSilenceWatchdog(session);
+        safeEndAiConversation(session.getCallId());
+    }
+
+    // ─── Silence watchdog (mirrors Twilio handler) ─────────────────────
+
+    private void startSilenceWatchdog(CallSession session, AiCallEventListener listener) {
+        ServiceConfiguration.Silence cfg = serviceConfiguration.getSilence();
+        if (cfg == null || !cfg.isEnabled()) return;
+        long intervalMs = cfg.getCheckIntervalMs();
+        ScheduledFuture<?> task = silenceWatchdogScheduler.scheduleWithFixedDelay(
+                () -> tickSilenceWatchdog(session, listener, cfg),
+                intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+        session.getProviderAttributes().put("silenceWatchdog", task);
+        log.info("[silence] watchdog started callId={} nudgeAfterMs={} hangupAfterNudgeMs={}",
+                session.getCallId(), cfg.getNudgeAfterMs(), cfg.getHangupAfterNudgeMs());
+    }
+
+    private void cancelSilenceWatchdog(CallSession session) {
+        Object t = session.getProviderAttributes().remove("silenceWatchdog");
+        if (t instanceof ScheduledFuture<?> f) {
+            f.cancel(false);
+        }
+    }
+
+    private void tickSilenceWatchdog(CallSession session, AiCallEventListener listener,
+                                     ServiceConfiguration.Silence cfg) {
+        try {
+            long now = System.currentTimeMillis();
+            long anchor = Math.max(session.getLastTtsActivityMs(), session.getLastCallerActivityMs());
+            if (BargeInHandler.isBotSpeaking(session)) return;
+
+            long nudgedAt = session.getSilenceNudgedAtMs();
+            if (nudgedAt > 0) {
+                if (now - nudgedAt >= cfg.getHangupAfterNudgeMs()) {
+                    log.info("[silence] HANGUP callId={}", session.getCallId());
+                    cancelSilenceWatchdog(session);
+                    String farewell = pickByLang(session, cfg.getFarewellTextHi(), cfg.getFarewellTextEn());
+                    listener.onHangup(session.getCallId(), farewell, "SILENCE");
+                }
+                return;
+            }
+
+            if (now - anchor >= cfg.getNudgeAfterMs()) {
+                String nudge = pickByLang(session, cfg.getNudgeTextHi(), cfg.getNudgeTextEn());
+                log.info("[silence] NUDGE callId={}", session.getCallId());
+                session.setSilenceNudgedAtMs(now);
+                listener.onAiReply(session.getCallId(), nudge);
+            }
+        } catch (Exception ex) {
+            log.warn("[silence] watchdog tick failed callId={}: {}", session.getCallId(), ex.getMessage());
+        }
+    }
+
+    private static String pickByLang(CallSession session, String hi, String en) {
+        String lang = session.getLanguage();
+        if (lang != null && lang.toLowerCase().startsWith("hi")) return hi;
+        return en;
+    }
+
+    private void safeEndAiConversation(String callId) {
+        try {
+            conversationCoordinator.onCallEnd(callId);
+        } catch (Exception ex) {
+            log.warn("[exotel] onCallEnd failed callId={}: {}", callId, ex.getMessage());
+        }
+    }
+
+    // ─── Filler question detection (mirrors Twilio handler) ────────────
+
+    private static final java.util.Set<String> QUESTION_WORDS = java.util.Set.of(
+            "what", "where", "when", "why", "who", "how", "which", "whose",
+            "can", "could", "do", "does", "did", "will", "would", "should",
+            "is", "are", "am", "was", "were", "may", "might", "tell", "explain",
+            "kya", "kaise", "kahan", "kab", "kyun", "kyon", "kaun", "kitna",
+            "kitne", "kitni", "batao", "bataiye", "samjhao", "dikhao",
+            "milega", "milegi", "hoga", "hogi");
+
+    private static final int FILLER_MIN_CHARS = 14;
+
+    private static boolean looksLikeFillerWorthy(String text) {
+        if (text == null) return false;
+        String trimmed = text.trim();
+        if (trimmed.length() < FILLER_MIN_CHARS) return false;
+        if (trimmed.endsWith("?")) return true;
+        String first = firstAlphaToken(trimmed);
+        return first != null && QUESTION_WORDS.contains(first);
+    }
+
+    private static String firstAlphaToken(String text) {
+        int n = text.length();
+        int i = 0;
+        while (i < n && !Character.isLetter(text.charAt(i))) i++;
+        int start = i;
+        while (i < n && (text.charAt(i) >= 'a' && text.charAt(i) <= 'z'
+                       || text.charAt(i) >= 'A' && text.charAt(i) <= 'Z')) i++;
+        return i == start ? null : text.substring(start, i).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    // ─── Query param parser ────────────────────────────────────────────
+
+    private static Map<String, String> parseQueryParams(String query) {
+        Map<String, String> params = new java.util.HashMap<>();
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0) {
+                String key = java.net.URLDecoder.decode(pair.substring(0, eq), java.nio.charset.StandardCharsets.UTF_8);
+                String val = java.net.URLDecoder.decode(pair.substring(eq + 1), java.nio.charset.StandardCharsets.UTF_8);
+                params.put(key, val);
+            }
+        }
+        return params;
+    }
+
+    // ─── AI Call Event Listener ────────────────────────────────────────
+
+    @RequiredArgsConstructor
+    private final class AiCallEventListener implements ConversationCoordinator.CallEventListener {
+
+        private final CallSession session;
+        private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>> ttsTail
+                = new java.util.concurrent.atomic.AtomicReference<>(java.util.concurrent.CompletableFuture.completedFuture(null));
+
+        private volatile long lastFillerAtMs = 0L;
+        private static final int FILLER_CHAIN_MAX = 3;
+        private static final long FILLER_CHAIN_GAP_MS = 600L;
+        private final java.util.concurrent.atomic.AtomicBoolean replyStartedForTurn =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        private final java.util.concurrent.atomic.AtomicInteger fillerChainCount =
+                new java.util.concurrent.atomic.AtomicInteger(0);
+        private volatile long fillerChainEpoch = 0L;
+
+        public void maybePlayFiller(String sttText) {
+            if (!fillerAudioCache.isEnabled()) return;
+            String trimmed = sttText == null ? "" : sttText.trim();
+            long now = System.currentTimeMillis();
+            if (now - lastFillerAtMs < fillerAudioCache.getMinGapMs()) return;
+            boolean isQuestion = looksLikeFillerWorthy(trimmed);
+            byte[] clip = isQuestion
+                    ? fillerAudioCache.pickForText(sttText)
+                    : fillerAudioCache.pickAckForText(sttText);
+            if (clip == null || clip.length == 0) return;
+            lastFillerAtMs = now;
+            replyStartedForTurn.set(false);
+            fillerChainCount.set(0);
+            fillerChainEpoch = session.getTtsEpoch().get();
+            if (isQuestion) {
+                queueChainedFiller(sttText, clip);
+            } else {
+                queueRawAudio(clip, "ack", fillerAudioCache.getStartDelayMs(), true);
+            }
+        }
+
+        private void queueChainedFiller(String sttText, byte[] clip) {
+            int idx = fillerChainCount.incrementAndGet();
+            long delay = (idx == 1) ? fillerAudioCache.getStartDelayMs() : FILLER_CHAIN_GAP_MS;
+            queueRawAudio(clip, "filler-" + idx, delay, true);
+            long approxClipMs = clip.length / AudioCodec.MULAW.bytesPerMs();
+            long checkAfterMs = delay + approxClipMs + 200L;
+            silenceWatchdogScheduler.schedule(() -> chainTick(sttText), checkAfterMs, TimeUnit.MILLISECONDS);
+        }
+
+        private void chainTick(String sttText) {
+            if (replyStartedForTurn.get()) return;
+            if (session.getEndingCall().get()) return;
+            if (session.getTtsEpoch().get() != fillerChainEpoch) return;
+            if (fillerChainCount.get() >= FILLER_CHAIN_MAX) {
+                playTroubleFallback();
+                return;
+            }
+            byte[] next = fillerAudioCache.pickForText(sttText);
+            if (next == null || next.length == 0) {
+                playTroubleFallback();
+                return;
+            }
+            queueChainedFiller(sttText, next);
+        }
+
+        private void playTroubleFallback() {
+            if (!replyStartedForTurn.compareAndSet(false, true)) return;
+            String msg = "Sorry, I'm having a little trouble right now. Could you please ask me again?";
+            log.warn("[fallback] callId={} text=\"{}\"", session.getCallId(), msg);
+            session.getTranscript().add(CallSession.TranscriptEntry.builder()
+                    .speaker("assistant").text(msg).timestamp(java.time.Instant.now()).build());
+            synthesize(session.getCallId(), msg);
+        }
+
+        private void queueRawAudio(byte[] mulawBytes, String tag, long startDelayMs,
+                                   boolean countAsBotSpeaking) {
+            String streamSid = (String) session.getProviderAttributes().get("streamSid");
+            WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
+            if (streamSid == null || ws == null || !ws.isOpen()) return;
+            long epochAtSubmit = session.getTtsEpoch().get();
+            ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                if (!ws.isOpen()) return;
+                if (session.getTtsEpoch().get() != epochAtSubmit) return;
+                if (startDelayMs > 0) {
+                    try { Thread.sleep(startDelayMs); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+                    if (!ws.isOpen() || session.getTtsEpoch().get() != epochAtSubmit) return;
+                }
+                if (countAsBotSpeaking) {
+                    int prev2 = session.getTtsInFlight().getAndIncrement();
+                    if (prev2 == 0) {
+                        long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
+                        if (sinceLast > BURST_GAP_MS) session.setBotSpeakingStartMs(System.currentTimeMillis());
+                    }
+                }
+                try {
+                    Base64.Encoder b64 = Base64.getEncoder();
+                    int frame = 160;
+                    int sent = 0;
+                    while (sent < mulawBytes.length) {
+                        if (session.getTtsEpoch().get() != epochAtSubmit) break;
+                        int n = Math.min(frame, mulawBytes.length - sent);
+                        byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
+                        if (countAsBotSpeaking) BargeInHandler.noteTtsChunkSent(session);
+                        sendMediaChunk(ws, streamSid, b64, piece);
+                        sent += n;
+                    }
+                } catch (Exception ex) {
+                    log.warn("[exotel] {} send failed callId={}: {}", tag, session.getCallId(), ex.getMessage());
+                } finally {
+                    if (countAsBotSpeaking) {
+                        session.getTtsInFlight().decrementAndGet();
+                        BargeInHandler.noteTtsChunkSent(session);
+                    }
+                }
+            }, ttsExecutor).exceptionally(ex -> null));
+        }
+
+        @Override
+        public void onAiReply(String callId, String text) {
+            replyStartedForTurn.set(true);
+            synthesize(callId, text);
+        }
+
+        @Override
+        public void onAiReplyChunk(String callId, String deltaText) {
+            if (deltaText == null || deltaText.isEmpty()) return;
+            replyStartedForTurn.set(true);
+            synthesize(callId, deltaText);
+        }
+
+        @Override
+        public void onAiTransientFailure(String callId) {
+            playTroubleFallback();
+        }
+
+        private void synthesize(String callId, String text) {
+            String streamSid = (String) session.getProviderAttributes().get("streamSid");
+            WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
+            if (streamSid == null || ws == null || !ws.isOpen()) return;
+
+            long epochAtSubmit = session.getTtsEpoch().get();
+            ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                if (!ws.isOpen() || session.getTtsEpoch().get() != epochAtSubmit) return;
+                int prevInFlight = session.getTtsInFlight().getAndIncrement();
+                if (prevInFlight == 0) {
+                    long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
+                    if (sinceLast > BURST_GAP_MS) session.setBotSpeakingStartMs(System.currentTimeMillis());
+                }
+                int[] totalBytes = {0};
+                try {
+                    Base64.Encoder b64 = Base64.getEncoder();
+                    textToSpeechProvider.synthesizeStream(text,
+                            VoiceProfile.builder().language(session.getLanguage()).build(),
+                            chunk -> {
+                                if (session.getTtsEpoch().get() != epochAtSubmit) throw new BargeInAbortException();
+                                if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
+                                    long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
+                                    log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                }
+                                BargeInHandler.noteTtsChunkSent(session);
+                                totalBytes[0] += chunk.length;
+                                sendMediaChunk(ws, streamSid, b64, chunk);
+                            });
+                } catch (BargeInAbortException ignored) {
+                } catch (Exception ex) {
+                    log.warn("[tts] FAIL callId={} epoch={}: {}", callId, epochAtSubmit, ex.getMessage());
+                } finally {
+                    session.getTtsInFlight().decrementAndGet();
+                    BargeInHandler.noteTtsChunkSent(session);
+                    if (session.getGreetingDone().compareAndSet(false, true)) {
+                        log.info("[greeting] done — STT now active callId={}", callId);
+                    }
+                }
+            }, ttsExecutor).exceptionally(ex -> null));
+        }
+
+        private final class BargeInAbortException extends RuntimeException {
+            BargeInAbortException() { super(null, null, false, false); }
+        }
+
+        private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {
+            if (!ws.isOpen()) return;
+            try {
+                ObjectNode frame = objectMapper.createObjectNode();
+                frame.put("event", "media");
+                frame.put("streamSid", streamSid);
+                frame.putObject("media").put("payload", b64.encodeToString(chunk));
+                synchronized (ws) {
+                    ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+
+        @Override
+        public void onCallbackNeeded(String callId) {
+            log.info("[ai] callback needed callId={}", callId);
+        }
+
+        @Override
+        public void onHangup(String callId, String spokenText, String reason) {
+            String streamSid = (String) session.getProviderAttributes().get("streamSid");
+            WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
+            log.info("[ai] hangup callId={} reason={}", callId, reason);
+
+            ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                try {
+                    if (spokenText != null && !spokenText.isBlank()
+                            && streamSid != null && ws != null && ws.isOpen()) {
+                        Base64.Encoder b64 = Base64.getEncoder();
+                        long[] bytes = {0L};
+                        textToSpeechProvider.synthesizeStream(spokenText,
+                                VoiceProfile.builder().language(session.getLanguage()).build(),
+                                chunk -> { bytes[0] += chunk.length; sendMediaChunk(ws, streamSid, b64, chunk); });
+                        long playbackMs = bytes[0] / AudioCodec.MULAW.bytesPerMs() + 1200L;
+                        Thread.sleep(playbackMs);
+                    }
+                } catch (Exception ex) {
+                    log.warn("[exotel] hangup TTS failed callId={}: {}", callId, ex.getMessage());
+                }
+                closeExotelStream(callId, ws);
+            }, ttsExecutor).exceptionally(ex -> { closeExotelStream(callId, (WebSocketSession) session.getProviderAttributes().get("ws")); return null; }));
+        }
+
+        private void closeExotelStream(String callId, WebSocketSession ws) {
+            if (ws == null || !ws.isOpen()) return;
+            try {
+                // Send a stop event to signal Exotel we're done, then close
+                ObjectNode frame = objectMapper.createObjectNode();
+                frame.put("event", "stop");
+                frame.put("streamSid", (String) session.getProviderAttributes().get("streamSid"));
+                synchronized (ws) {
+                    ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+                }
+                ws.close();
+                log.info("[exotel] stream closed callId={}", callId);
+            } catch (Exception ex) {
+                log.warn("[exotel] stream close failed callId={}: {}", callId, ex.getMessage());
+            }
+        }
+    }
+}
