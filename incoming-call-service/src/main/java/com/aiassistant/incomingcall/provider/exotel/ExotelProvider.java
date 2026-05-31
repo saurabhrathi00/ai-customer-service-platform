@@ -90,9 +90,12 @@ public class ExotelProvider implements TelephonyProvider {
         // customerPhone uses raw digits (no '+' prefix) to avoid encoding issues.
         String phone = handoff.getCustomerPhone();
         if (phone != null && phone.startsWith("+")) phone = phone.substring(1);
+        String bName = handoff.getBusinessName();
+        if (bName != null) bName = bName.replaceAll("[^a-zA-Z0-9 ]", "").trim();
         String wsUrl = handoff.getWsUrl()
                 + "?businessId=" + handoff.getBusinessId()
-                + "&customerPhone=" + phone;
+                + "&customerPhone=" + phone
+                + (bName != null && !bName.isEmpty() ? "&businessName=" + bName : "");
 
         String json = "{\"url\":\"" + escapeJson(wsUrl) + "\"}";
         log.info("[exotel] handoff callId={} wsUrl={}", handoff.getCallId(), wsUrl);
