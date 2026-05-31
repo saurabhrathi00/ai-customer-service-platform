@@ -155,20 +155,33 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                 start.path("stream_sid").asText(session.getCallId()));
         String callSid = start.path("callSid").asText(
                 start.path("call_sid").asText(session.getCallId()));
-        JsonNode fmt = start.path("mediaFormat");
+        JsonNode fmt = start.path("media_format");
+        if (fmt.isMissingNode()) fmt = start.path("mediaFormat");
         String encoding = fmt.path("encoding").asText("audio/x-mulaw");
-        int sampleRate = fmt.path("sampleRate").asInt(8000);
+        int sampleRate = fmt.path("sample_rate").isMissingNode()
+                ? fmt.path("sampleRate").asInt(8000)
+                : fmt.path("sample_rate").asInt(8000);
+        String bitRate = fmt.path("bit_rate").asText(fmt.path("bitRate").asText(""));
 
         session.getProviderAttributes().put("streamSid", streamSid);
         session.getProviderAttributes().put("exotelCallSid", callSid);
 
-        // Detect codec from encoding field
-        AudioCodec codec = encoding.contains("l16") || encoding.contains("pcm")
-                ? AudioCodec.PCM16 : AudioCodec.MULAW;
+        // Detect codec: 128kbps@8kHz = 16 bits/sample = PCM16; 64kbps = mulaw
+        AudioCodec codec;
+        if (encoding.contains("l16") || encoding.contains("pcm")) {
+            codec = AudioCodec.PCM16;
+        } else if (bitRate.contains("128")) {
+            codec = AudioCodec.PCM16;
+        } else if (encoding.equals("base64")) {
+            // Exotel sends "base64" as transport encoding; use bitrate to decide
+            codec = AudioCodec.PCM16;
+        } else {
+            codec = AudioCodec.MULAW;
+        }
         session.getProviderAttributes().put("codec", codec);
 
-        log.info("[exotel] call started callId={} encoding={} sampleRate={} codec={}",
-                session.getCallId(), encoding, sampleRate, codec);
+        log.info("[exotel] call started callId={} encoding={} sampleRate={} bitRate={} codec={}",
+                session.getCallId(), encoding, sampleRate, bitRate, codec);
 
         // Hydrate from custom_parameters (Exotel uses snake_case)
         JsonNode cp = start.path("custom_parameters");
@@ -585,10 +598,15 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {
             if (!ws.isOpen()) return;
             try {
+                // TTS outputs mulaw; Exotel expects PCM16 — convert on the fly
+                AudioCodec codec = (AudioCodec) session.getProviderAttributes()
+                        .getOrDefault("codec", AudioCodec.MULAW);
+                byte[] outBytes = (codec == AudioCodec.PCM16) ? mulawToPcm16(chunk) : chunk;
+
                 ObjectNode frame = objectMapper.createObjectNode();
                 frame.put("event", "media");
                 frame.put("streamSid", streamSid);
-                frame.putObject("media").put("payload", b64.encodeToString(chunk));
+                frame.putObject("media").put("payload", b64.encodeToString(outBytes));
                 synchronized (ws) {
                     ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
                 }
@@ -643,5 +661,28 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                 log.warn("[exotel] stream close failed callId={}: {}", callId, ex.getMessage());
             }
         }
+    }
+
+    private static final short[] MULAW_DECODE = new short[256];
+    static {
+        for (int i = 0; i < 256; i++) {
+            int mu = ~i & 0xFF;
+            int sign = (mu & 0x80) != 0 ? -1 : 1;
+            int exponent = (mu >> 4) & 0x07;
+            int mantissa = mu & 0x0F;
+            int magnitude = ((mantissa << 1) + 33) << (exponent + 2);
+            magnitude -= 0x84;
+            MULAW_DECODE[i] = (short) (sign * magnitude);
+        }
+    }
+
+    private static byte[] mulawToPcm16(byte[] mulaw) {
+        byte[] pcm = new byte[mulaw.length * 2];
+        for (int i = 0; i < mulaw.length; i++) {
+            short sample = MULAW_DECODE[mulaw[i] & 0xFF];
+            pcm[i * 2] = (byte) (sample & 0xFF);
+            pcm[i * 2 + 1] = (byte) ((sample >> 8) & 0xFF);
+        }
+        return pcm;
     }
 }
