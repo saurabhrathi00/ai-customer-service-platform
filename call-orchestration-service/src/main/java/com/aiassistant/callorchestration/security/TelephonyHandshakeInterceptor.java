@@ -79,7 +79,13 @@ public class TelephonyHandshakeInterceptor implements HandshakeInterceptor {
 
         attributes.put(ATTR_PROVIDER, provider);
         attributes.put(ATTR_CALL_ID, callId);
-        log.info("WS handshake ACCEPTED provider={} callId={}", provider, callId);
+
+        String query = request.getURI().getQuery();
+        if (query != null && !query.isBlank()) {
+            attributes.put("queryString", query);
+        }
+
+        log.info("WS handshake ACCEPTED provider={} callId={} query={}", provider, callId, query);
         return true;
     }
 

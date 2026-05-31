@@ -93,15 +93,18 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     public void onConnect(CallSession session, Map<String, String> connectParams) {
         log.info("[exotel] onConnect callId={}", session.getCallId());
 
-        // Hydrate session from query params passed via the WebSocket URL
+        // Hydrate session from query params stored by handshake interceptor
         WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
-        if (ws != null && ws.getUri() != null) {
-            String query = ws.getUri().getQuery();
+        if (ws != null) {
+            String query = (String) ws.getAttributes().get("queryString");
+            log.info("[exotel] onConnect query from handshake attrs: {}", query);
             if (query != null) {
                 Map<String, String> params = parseQueryParams(query);
                 if (params.containsKey("businessId"))    session.setBusinessId(params.get("businessId"));
                 if (params.containsKey("businessName"))  session.setBusinessName(params.get("businessName"));
                 if (params.containsKey("customerPhone")) session.setCustomerPhone(params.get("customerPhone"));
+                log.info("[exotel] session hydrated businessId={} businessName={} customerPhone={}",
+                        session.getBusinessId(), session.getBusinessName(), session.getCustomerPhone());
             }
         }
     }
