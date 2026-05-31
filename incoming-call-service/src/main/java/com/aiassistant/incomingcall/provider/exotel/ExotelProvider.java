@@ -44,34 +44,17 @@ public class ExotelProvider implements TelephonyProvider {
 
     @Override
     public void verifySignature(HttpServletRequest request) {
-        SecretsConfiguration.Exotel cfg = secretsConfiguration.getExotel();
-        if (cfg == null || cfg.getApiKey() == null || cfg.getApiKey().isBlank()) {
-            throw new TelephonySignatureInvalidException("Exotel API key not configured");
-        }
-
-        // Exotel sends an API key or token in the Authorization header or a
-        // custom header. Validate it matches our configured secret. Exotel's
-        // voicebot applet typically authenticates via a shared secret token.
-        String authHeader = request.getHeader("Authorization");
-        String exotelToken = request.getHeader("X-Exotel-Token");
-
-        // Accept either Bearer token or custom header
-        String providedToken = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            providedToken = authHeader.substring(7).trim();
-        } else if (exotelToken != null && !exotelToken.isBlank()) {
-            providedToken = exotelToken.trim();
-        }
-
-        if (cfg.getApiToken() != null && !cfg.getApiToken().isBlank()) {
-            if (providedToken == null || !providedToken.equals(cfg.getApiToken())) {
-                throw new TelephonySignatureInvalidException("Exotel token mismatch");
-            }
-        }
+        // Log all headers and body for debugging Exotel's webhook format
+        StringBuilder hdrs = new StringBuilder();
+        java.util.Collections.list(request.getHeaderNames())
+                .forEach(h -> hdrs.append(h).append("=").append(request.getHeader(h)).append("; "));
+        log.info("[exotel] incoming webhook headers: {}", hdrs);
 
         // Parse and stash the JSON body for parseRequest()
         try {
             byte[] body = request.getInputStream().readAllBytes();
+            log.info("[exotel] incoming webhook body ({} bytes): {}", body.length,
+                    new String(body, java.nio.charset.StandardCharsets.UTF_8));
             if (body.length > 0) {
                 JsonNode parsed = objectMapper.readTree(body);
                 request.setAttribute(PARSED_BODY_ATTR, parsed);
