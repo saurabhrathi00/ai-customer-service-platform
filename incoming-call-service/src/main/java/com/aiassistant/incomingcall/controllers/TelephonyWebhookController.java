@@ -33,13 +33,23 @@ public class TelephonyWebhookController {
     private final BusinessLookupService businessLookupService;
     private final ServiceConfiguration serviceConfiguration;
 
-    @PostMapping("/{provider}/incoming/call")
+    @org.springframework.web.bind.annotation.RequestMapping(
+            value = "/{provider}/incoming/call",
+            method = {org.springframework.web.bind.annotation.RequestMethod.POST,
+                      org.springframework.web.bind.annotation.RequestMethod.GET})
     public ResponseEntity<String> incomingCall(@PathVariable("provider") String providerName,
                                                HttpServletRequest request) {
         TelephonyProvider provider = registry.find(providerName)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Unknown provider: " + providerName));
 
         IncomingCallRequest call = provider.parseRequest(request);
+
+        // Exotel (and others) may send a GET with no body to validate the URL.
+        if (call.getCallId() == null && call.getToNumber() == null) {
+            log.info("URL validation probe from provider={} (no call data) — returning 200", provider.name());
+            return ResponseEntity.ok().body("{\"status\":\"ok\"}");
+        }
+
         log.info("Incoming call via provider={} callId={} From={} To={} CallStatus={}",
                 provider.name(), call.getCallId(), call.getFromNumber(),
                 call.getToNumber(), call.getCallStatus());
