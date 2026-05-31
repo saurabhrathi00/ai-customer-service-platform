@@ -102,7 +102,11 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                 Map<String, String> params = parseQueryParams(query);
                 if (params.containsKey("businessId"))    session.setBusinessId(params.get("businessId"));
                 if (params.containsKey("businessName"))  session.setBusinessName(params.get("businessName"));
-                if (params.containsKey("customerPhone")) session.setCustomerPhone(params.get("customerPhone"));
+                if (params.containsKey("customerPhone")) {
+                    String phone = params.get("customerPhone");
+                    if (phone != null && !phone.startsWith("+")) phone = "+" + phone;
+                    session.setCustomerPhone(phone);
+                }
                 log.info("[exotel] session hydrated businessId={} businessName={} customerPhone={}",
                         session.getBusinessId(), session.getBusinessName(), session.getCustomerPhone());
             }

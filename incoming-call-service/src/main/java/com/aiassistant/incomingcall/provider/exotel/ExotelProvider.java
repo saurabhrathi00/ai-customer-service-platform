@@ -85,14 +85,14 @@ public class ExotelProvider implements TelephonyProvider {
     @Override
     public TelephonyResponse buildStreamHandoff(StreamHandoff handoff) {
         // Exotel Voicebot Applet expects: {"url": "wss://..."}
-        // We append business context as query params so call-orchestration-service
-        // can hydrate the session without needing a separate lookup.
+        // Exotel supports max 3 query params, total length ≤256 chars.
+        // Don't URL-encode values — Exotel's parser may strip encoded params.
+        // customerPhone uses raw digits (no '+' prefix) to avoid encoding issues.
+        String phone = handoff.getCustomerPhone();
+        if (phone != null && phone.startsWith("+")) phone = phone.substring(1);
         String wsUrl = handoff.getWsUrl()
-                + "?businessId=" + encode(handoff.getBusinessId())
-                + "&customerPhone=" + encode(handoff.getCustomerPhone());
-        if (handoff.getBusinessName() != null && !handoff.getBusinessName().isBlank()) {
-            wsUrl += "&businessName=" + encode(handoff.getBusinessName());
-        }
+                + "?businessId=" + handoff.getBusinessId()
+                + "&customerPhone=" + phone;
 
         String json = "{\"url\":\"" + escapeJson(wsUrl) + "\"}";
         log.info("[exotel] handoff callId={} wsUrl={}", handoff.getCallId(), wsUrl);
