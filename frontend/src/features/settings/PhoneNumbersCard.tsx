@@ -157,7 +157,7 @@ function AddDialog({
       >
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Twilio number</Label>
+            <Label>Phone number</Label>
             <Input placeholder="+14155551234" className="font-mono" {...form.register('twilioNumber')} />
             {form.formState.errors.twilioNumber && (
               <p className="text-xs text-destructive">

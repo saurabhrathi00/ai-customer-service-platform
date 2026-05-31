@@ -76,8 +76,8 @@ public class ExotelProvider implements TelephonyProvider {
 
         return IncomingCallRequest.builder()
                 .callId(callSid)
-                .fromNumber(from)
-                .toNumber(to)
+                .fromNumber(normalizeIndianNumber(from))
+                .toNumber(normalizeIndianNumber(to))
                 .callStatus(status)
                 .build();
     }
@@ -130,5 +130,17 @@ public class ExotelProvider implements TelephonyProvider {
     private static String escapeJson(String value) {
         if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String normalizeIndianNumber(String number) {
+        if (number == null || number.isBlank()) return number;
+        if (number.startsWith("+")) return number;
+        if (number.startsWith("0")) {
+            return "+91" + number.substring(1);
+        }
+        if (number.length() == 10) {
+            return "+91" + number;
+        }
+        return number;
     }
 }
