@@ -170,12 +170,19 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         log.info("[exotel] call started callId={} encoding={} sampleRate={} codec={}",
                 session.getCallId(), encoding, sampleRate, codec);
 
-        // Hydrate from customParameters if present (some Exotel versions include these)
-        JsonNode cp = start.path("customParameters");
-        if (cp != null && !cp.isMissingNode()) {
+        // Hydrate from custom_parameters (Exotel uses snake_case)
+        JsonNode cp = start.path("custom_parameters");
+        if (cp.isMissingNode()) cp = start.path("customParameters");
+        if (!cp.isMissingNode()) {
             if (cp.hasNonNull("businessId"))    session.setBusinessId(cp.path("businessId").asText());
             if (cp.hasNonNull("businessName"))  session.setBusinessName(cp.path("businessName").asText());
-            if (cp.hasNonNull("customerPhone")) session.setCustomerPhone(cp.path("customerPhone").asText());
+            if (cp.hasNonNull("customerPhone")) {
+                String phone = cp.path("customerPhone").asText();
+                if (!phone.startsWith("+")) phone = "+" + phone;
+                session.setCustomerPhone(phone);
+            }
+            log.info("[exotel] session hydrated from start frame businessId={} customerPhone={}",
+                    session.getBusinessId(), session.getCustomerPhone());
         }
 
         BargeInHandler bargeHandler = new BargeInHandler(
