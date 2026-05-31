@@ -119,7 +119,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
             JsonNode root = objectMapper.readTree(payload);
             String event = root.path("event").asText("unknown");
             switch (event) {
-                case "connected" -> log.info("[exotel] <- CONNECTED callId={}", session.getCallId());
+                case "connected" -> log.info("[exotel] <- CONNECTED callId={} raw={}", session.getCallId(), payload);
 
                 case "start" -> handleStart(session, root);
 
@@ -149,6 +149,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private void handleStart(CallSession session, JsonNode root) {
+        log.info("[exotel] <- START raw callId={} payload={}", session.getCallId(), root.toString());
         JsonNode start = root.path("start");
         String streamSid = start.path("streamSid").asText(
                 start.path("stream_sid").asText(session.getCallId()));
