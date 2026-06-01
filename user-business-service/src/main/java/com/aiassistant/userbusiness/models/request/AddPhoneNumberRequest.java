@@ -8,8 +8,8 @@ import lombok.Data;
 @Data
 public class AddPhoneNumberRequest {
 
-    @NotBlank(message = "twilioNumber is required")
-    @Pattern(regexp = "^\\+[1-9]\\d{6,14}$", message = "twilioNumber must be E.164 format (e.g. +14155551234)")
+    @NotBlank(message = "Phone number is required")
+    @Size(max = 20, message = "Phone number too long")
     private String twilioNumber;
 
     @Size(max = 100)
