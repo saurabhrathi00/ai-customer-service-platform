@@ -73,11 +73,12 @@ public class ExotelProvider implements TelephonyProvider {
         String from = extractField(body, request, "From", "from", "CallFrom");
         String to = extractField(body, request, "To", "to", "CallTo", "DialWhomNumber");
         String status = extractField(body, request, "Status", "status", "CallStatus");
+        log.info("[exotel] raw parsed fields — From={} To={} CallSid={} Status={}", from, to, callSid, status);
 
         return IncomingCallRequest.builder()
                 .callId(callSid)
-                .fromNumber(normalizeIndianNumber(from))
-                .toNumber(normalizeIndianNumber(to))
+                .fromNumber(from)
+                .toNumber(to)
                 .callStatus(status)
                 .build();
     }
@@ -135,15 +136,4 @@ public class ExotelProvider implements TelephonyProvider {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static String normalizeIndianNumber(String number) {
-        if (number == null || number.isBlank()) return number;
-        if (number.startsWith("+")) return number;
-        if (number.startsWith("0")) {
-            return "+91" + number.substring(1);
-        }
-        if (number.length() == 10) {
-            return "+91" + number;
-        }
-        return number;
-    }
 }
