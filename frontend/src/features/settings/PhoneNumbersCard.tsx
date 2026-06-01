@@ -17,17 +17,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { useAuthStore } from '@/store/auth';
 
-function normalizePhone(raw: string, type: 'mobile' | 'landline'): string {
-  const digits = raw.replace(/[\s\-()]/g, '');
-  if (digits.startsWith('+')) return digits;
-  if (type === 'landline') {
-    if (digits.startsWith('0')) return '+91' + digits.substring(1);
-    return '+91' + digits;
-  }
-  if (digits.startsWith('0')) return '+91' + digits.substring(1);
-  if (/^\d{10}$/.test(digits)) return '+91' + digits;
-  return digits;
-}
 
 const mobileSchema = z.object({
   phoneType: z.literal('mobile'),
@@ -86,7 +75,7 @@ export function PhoneNumbersCard() {
             <div>
               <CardTitle>Phone numbers</CardTitle>
               <CardDescription>
-                The Twilio numbers that route to your AI receptionist.
+                The phone numbers that route to your AI receptionist.
               </CardDescription>
             </div>
             <Button onClick={() => setOpen(true)}>
@@ -105,7 +94,7 @@ export function PhoneNumbersCard() {
             <EmptyState
               icon={<Phone className="h-5 w-5" />}
               title="No numbers yet"
-              description="Add the Twilio number you've configured to forward calls to VoxAI."
+              description="Add the phone number you've configured to forward calls to VoxAI."
               action={
                 <Button onClick={() => setOpen(true)}>
                   <Plus className="h-4 w-4" /> Add number
@@ -176,7 +165,7 @@ function AddDialog({
   const add = useMutation({
     mutationFn: (v: Values) =>
       business.addPhoneNumber(businessId, {
-        twilioNumber: normalizePhone(v.twilioNumber, v.phoneType),
+        twilioNumber: v.twilioNumber.trim(),
         label: v.label,
       }),
     onSuccess: () => {

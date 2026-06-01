@@ -196,7 +196,7 @@ export default function DashboardPage() {
               <EmptyState
                 icon={<PhoneCall className="h-5 w-5" />}
                 title="No calls yet"
-                description="Once your Twilio number is wired up, every call lands here within seconds of ending."
+                description="Once your phone number is wired up, every call lands here within seconds of ending."
               />
             ) : (
               <ul className="divide-y">
