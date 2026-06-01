@@ -104,7 +104,7 @@ public class BusinessService {
     public BusinessLookupResponse lookupByTwilioNumber(String twilioNumber) {
         BusinessPhoneNumberEntity phone = phoneNumberRepository.findByTwilioNumber(twilioNumber)
                 .orElseThrow(() -> new BusinessNotFoundException(
-                        "No business found for Twilio number: " + twilioNumber));
+                        "No business found for phone number: " + twilioNumber));
         BusinessEntity business = loadBusiness(phone.getBusinessId());
         return BusinessLookupResponse.builder()
                 .businessId(business.getId())

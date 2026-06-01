@@ -37,7 +37,7 @@ public class PhoneNumberService {
     public PhoneNumberResponse add(String businessId, AddPhoneNumberRequest request) {
         assertBusinessExists(businessId);
         if (phoneNumberRepository.existsByTwilioNumber(request.getTwilioNumber())) {
-            throw new ConflictException("Twilio number already assigned: " + request.getTwilioNumber());
+            throw new ConflictException("Phone number already assigned: " + request.getTwilioNumber());
         }
         BusinessPhoneNumberEntity entity = BusinessPhoneNumberEntity.builder()
                 .businessId(businessId)
