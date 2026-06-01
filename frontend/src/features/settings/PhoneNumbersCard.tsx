@@ -17,12 +17,47 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { useAuthStore } from '@/store/auth';
 
-const schema = z.object({
+function normalizePhone(raw: string, type: 'mobile' | 'landline'): string {
+  const digits = raw.replace(/[\s\-()]/g, '');
+  if (digits.startsWith('+')) return digits;
+  if (type === 'landline') {
+    if (digits.startsWith('0')) return '+91' + digits.substring(1);
+    return '+91' + digits;
+  }
+  if (digits.startsWith('0')) return '+91' + digits.substring(1);
+  if (/^\d{10}$/.test(digits)) return '+91' + digits;
+  return digits;
+}
+
+const mobileSchema = z.object({
+  phoneType: z.literal('mobile'),
   twilioNumber: z
     .string()
-    .regex(/^\+[1-9]\d{6,14}$/, 'Use E.164 (e.g. +14155551234)'),
+    .min(1, 'Phone number is required')
+    .refine((v) => {
+      const digits = v.replace(/[\s\-()]/g, '');
+      if (digits.startsWith('+91')) return /^\+91\d{10}$/.test(digits);
+      if (digits.startsWith('0')) return /^0\d{10}$/.test(digits);
+      return /^\d{10}$/.test(digits);
+    }, 'Enter a valid 10-digit mobile number'),
   label: z.string().max(100).optional(),
 });
+
+const landlineSchema = z.object({
+  phoneType: z.literal('landline'),
+  twilioNumber: z
+    .string()
+    .min(1, 'Phone number is required')
+    .refine((v) => {
+      const digits = v.replace(/[\s\-()]/g, '');
+      if (digits.startsWith('+91')) return /^\+91\d{7,11}$/.test(digits);
+      if (digits.startsWith('0')) return /^0\d{7,11}$/.test(digits);
+      return /^\d{7,11}$/.test(digits);
+    }, 'Enter a valid landline number (with STD code)'),
+  label: z.string().max(100).optional(),
+});
+
+const schema = z.discriminatedUnion('phoneType', [mobileSchema, landlineSchema]);
 type Values = z.infer<typeof schema>;
 
 export function PhoneNumbersCard() {
@@ -133,11 +168,17 @@ function AddDialog({
   const qc = useQueryClient();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { twilioNumber: '', label: '' },
+    defaultValues: { phoneType: 'mobile', twilioNumber: '', label: '' },
   });
 
+  const phoneType = form.watch('phoneType');
+
   const add = useMutation({
-    mutationFn: (v: Values) => business.addPhoneNumber(businessId, v),
+    mutationFn: (v: Values) =>
+      business.addPhoneNumber(businessId, {
+        twilioNumber: normalizePhone(v.twilioNumber, v.phoneType),
+        label: v.label,
+      }),
     onSuccess: () => {
       toast.success('Number added');
       qc.invalidateQueries({ queryKey: ['business', 'phone-numbers', businessId] });
@@ -157,8 +198,43 @@ function AddDialog({
       >
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
+            <Label>Type</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  phoneType === 'mobile'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground hover:bg-muted'
+                }`}
+                onClick={() => { form.setValue('phoneType', 'mobile'); form.clearErrors('twilioNumber'); }}
+              >
+                Mobile
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  phoneType === 'landline'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground hover:bg-muted'
+                }`}
+                onClick={() => { form.setValue('phoneType', 'landline'); form.clearErrors('twilioNumber'); }}
+              >
+                Landline
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
             <Label>Phone number</Label>
-            <Input placeholder="+14155551234" className="font-mono" {...form.register('twilioNumber')} />
+            <Input
+              placeholder={phoneType === 'mobile' ? '9876543210' : '01141186129'}
+              className="font-mono"
+              inputMode="tel"
+              {...form.register('twilioNumber')}
+            />
+            <p className="text-xs text-muted-foreground">
+              {phoneType === 'mobile' ? '10-digit mobile number' : 'Landline with STD code (e.g. 01141186129)'}
+            </p>
             {form.formState.errors.twilioNumber && (
               <p className="text-xs text-destructive">
                 {form.formState.errors.twilioNumber.message}

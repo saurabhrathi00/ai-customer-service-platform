@@ -80,9 +80,10 @@ public class MediaStreamDispatcherHandler extends TextWebSocketHandler {
         String callId = (String) ws.getAttributes().get("callId");
         String provider = (String) ws.getAttributes().get("provider");
         if (callId == null) return;
-        callSessionRegistry.remove(callId).ifPresent(session ->
+        callSessionRegistry.get(callId).ifPresent(session ->
                 handlerRegistry.find(provider).ifPresent(h -> h.onDisconnect(session, status.getReason()))
         );
+        callSessionRegistry.remove(callId);
         log.info("WS closed provider={} callId={} status={}", provider, callId, status);
     }
 
