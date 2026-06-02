@@ -85,11 +85,11 @@ public class TelephonyWebhookController {
                         business.getName(), business.getIsActive());
 
                 String status = call.getCallStatus();
-                boolean isInitialEvent = status == null
-                        || status.equalsIgnoreCase("incomingcall")
-                        || status.equalsIgnoreCase("ringing");
+                boolean isFollowUpEvent = "connected".equalsIgnoreCase(status)
+                        || "completed".equalsIgnoreCase(status)
+                        || "disconnected".equalsIgnoreCase(status);
 
-                if (isInitialEvent) {
+                if (!isFollowUpEvent) {
                     handoff = StreamHandoff.builder()
                             .callId(call.getCallId())
                             .businessId(business.getBusinessId())
