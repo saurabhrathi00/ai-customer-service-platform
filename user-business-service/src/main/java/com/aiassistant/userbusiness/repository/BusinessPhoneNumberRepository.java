@@ -12,9 +12,9 @@ public interface BusinessPhoneNumberRepository extends JpaRepository<BusinessPho
 
     List<BusinessPhoneNumberEntity> findAllByBusinessId(String businessId);
 
-    Optional<BusinessPhoneNumberEntity> findByTwilioNumber(String twilioNumber);
+    Optional<BusinessPhoneNumberEntity> findByPhoneNumber(String phoneNumber);
 
     Optional<BusinessPhoneNumberEntity> findByIdAndBusinessId(String id, String businessId);
 
-    boolean existsByTwilioNumber(String twilioNumber);
+    boolean existsByPhoneNumber(String phoneNumber);
 }

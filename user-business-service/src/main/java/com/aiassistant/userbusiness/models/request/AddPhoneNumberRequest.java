@@ -10,7 +10,10 @@ public class AddPhoneNumberRequest {
 
     @NotBlank(message = "Phone number is required")
     @Size(max = 20, message = "Phone number too long")
-    private String twilioNumber;
+    private String phoneNumber;
+
+    @NotBlank(message = "Provider slug is required")
+    private String providerSlug;
 
     @Size(max = 100)
     private String label;

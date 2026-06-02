@@ -28,10 +28,16 @@ public final class BusinessMapper {
     }
 
     public static PhoneNumberResponse toResponse(BusinessPhoneNumberEntity e) {
+        return toResponse(e, null);
+    }
+
+    public static PhoneNumberResponse toResponse(BusinessPhoneNumberEntity e, String providerSlug) {
         return PhoneNumberResponse.builder()
                 .id(e.getId())
                 .businessId(e.getBusinessId())
-                .twilioNumber(e.getTwilioNumber())
+                .phoneNumber(e.getPhoneNumber())
+                .providerId(e.getProviderId())
+                .providerSlug(providerSlug)
                 .label(e.getLabel())
                 .isActive(e.getIsActive())
                 .createdAt(e.getCreatedAt())

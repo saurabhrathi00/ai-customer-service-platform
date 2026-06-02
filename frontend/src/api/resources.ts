@@ -46,7 +46,7 @@ export const business = {
   phoneNumbers: (id: string) =>
     businessApi.get<PhoneNumberResponse[]>(`/business/${id}/phone-numbers`).then((r) => r.data),
 
-  addPhoneNumber: (id: string, input: { twilioNumber: string; label?: string }) =>
+  addPhoneNumber: (id: string, input: { phoneNumber: string; providerSlug: string; label?: string }) =>
     businessApi
       .post<PhoneNumberResponse>(`/business/${id}/phone-numbers`, input)
       .then((r) => r.data),

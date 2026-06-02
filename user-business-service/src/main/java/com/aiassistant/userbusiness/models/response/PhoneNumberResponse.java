@@ -12,7 +12,9 @@ import java.time.Instant;
 public class PhoneNumberResponse {
     String id;
     String businessId;
-    String twilioNumber;
+    String phoneNumber;
+    String providerId;
+    String providerSlug;
     String label;
     Boolean isActive;
     Instant createdAt;

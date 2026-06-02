@@ -20,7 +20,7 @@ import { useAuthStore } from '@/store/auth';
 
 const mobileSchema = z.object({
   phoneType: z.literal('mobile'),
-  twilioNumber: z
+  phoneNumber: z
     .string()
     .min(1, 'Phone number is required')
     .refine((v) => {
@@ -38,7 +38,7 @@ const mobileSchema = z.object({
 
 const landlineSchema = z.object({
   phoneType: z.literal('landline'),
-  twilioNumber: z
+  phoneNumber: z
     .string()
     .min(1, 'Phone number is required')
     .refine((v) => {
@@ -121,13 +121,16 @@ export function PhoneNumbersCard() {
                       <Phone className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-mono text-sm font-medium">{n.twilioNumber}</p>
+                      <p className="font-mono text-sm font-medium">{n.phoneNumber}</p>
                       <p className="text-xs text-muted-foreground truncate">
                         {n.label ?? 'Unlabeled'}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {n.providerSlug && (
+                      <Badge variant="outline" className="capitalize">{n.providerSlug}</Badge>
+                    )}
                     {n.isActive ? (
                       <Badge variant="success">Active</Badge>
                     ) : (
@@ -137,7 +140,7 @@ export function PhoneNumbersCard() {
                       variant="ghost"
                       size="icon"
                       onClick={() => {
-                        if (confirm(`Remove ${n.twilioNumber}?`)) remove.mutate(n.id);
+                        if (confirm(`Remove ${n.phoneNumber}?`)) remove.mutate(n.id);
                       }}
                       className="opacity-0 transition-opacity group-hover:opacity-100"
                     >
@@ -167,7 +170,7 @@ function AddDialog({
   const qc = useQueryClient();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { phoneType: 'mobile', twilioNumber: '', label: '' },
+    defaultValues: { phoneType: 'mobile', phoneNumber: '', label: '' },
   });
 
   const phoneType = form.watch('phoneType');
@@ -175,7 +178,8 @@ function AddDialog({
   const add = useMutation({
     mutationFn: (v: Values) =>
       business.addPhoneNumber(businessId, {
-        twilioNumber: normalizeForStorage(v.twilioNumber),
+        phoneNumber: normalizeForStorage(v.phoneNumber),
+        providerSlug: 'exotel',
         label: v.label,
       }),
     onSuccess: () => {
@@ -206,7 +210,7 @@ function AddDialog({
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-muted-foreground hover:bg-muted'
                 }`}
-                onClick={() => { form.setValue('phoneType', 'mobile'); form.clearErrors('twilioNumber'); }}
+                onClick={() => { form.setValue('phoneType', 'mobile'); form.clearErrors('phoneNumber'); }}
               >
                 Mobile
               </button>
@@ -217,7 +221,7 @@ function AddDialog({
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-muted-foreground hover:bg-muted'
                 }`}
-                onClick={() => { form.setValue('phoneType', 'landline'); form.clearErrors('twilioNumber'); }}
+                onClick={() => { form.setValue('phoneType', 'landline'); form.clearErrors('phoneNumber'); }}
               >
                 Landline
               </button>
@@ -229,14 +233,14 @@ function AddDialog({
               placeholder={phoneType === 'mobile' ? '9876543210' : '01141186129'}
               className="font-mono"
               inputMode="tel"
-              {...form.register('twilioNumber')}
+              {...form.register('phoneNumber')}
             />
             <p className="text-xs text-muted-foreground">
               {phoneType === 'mobile' ? '10-digit mobile number' : 'Landline with STD code (e.g. 01141186129)'}
             </p>
-            {form.formState.errors.twilioNumber && (
+            {form.formState.errors.phoneNumber && (
               <p className="text-xs text-destructive">
-                {form.formState.errors.twilioNumber.message}
+                {form.formState.errors.phoneNumber.message}
               </p>
             )}
           </div>

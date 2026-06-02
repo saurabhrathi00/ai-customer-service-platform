@@ -31,8 +31,8 @@ INSERT INTO business.businesses (
     TRUE
 );
 
-INSERT INTO business.business_phone_numbers (id, business_id, twilio_number, label, is_active) VALUES
-    ('01KS6SY1R7JBTDN7GGPG79Y3TX', '01KS6SY1R7F51YWP0PCYWQ3Z83', '+918045812623', 'Primary', TRUE);
+INSERT INTO business.business_phone_numbers (id, business_id, phone_number, provider_id, label, is_active) VALUES
+    ('01KS6SY1R7JBTDN7GGPG79Y3TX', '01KS6SY1R7F51YWP0PCYWQ3Z83', '918045812623', '01PROVIDER0EXOTEL000000000', 'Primary', TRUE);
 
 INSERT INTO business.rating_config (id, business_id, signal_key, score_value) VALUES
     ('01KS6SY1R7HE8WZCZZZ3K9EXSF', '01KS6SY1R7F51YWP0PCYWQ3Z83', 'LONG_CALL',            2),

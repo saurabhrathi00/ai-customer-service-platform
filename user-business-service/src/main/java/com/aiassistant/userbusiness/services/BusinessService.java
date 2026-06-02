@@ -102,14 +102,14 @@ public class BusinessService {
     }
 
     public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
-        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByTwilioNumber(phoneNumber)
+        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new BusinessNotFoundException(
                         "No business found for phone number: " + phoneNumber));
         BusinessEntity business = loadBusiness(phone.getBusinessId());
         return BusinessLookupResponse.builder()
                 .businessId(business.getId())
                 .name(business.getName())
-                .phoneNumber(phone.getTwilioNumber())
+                .phoneNumber(phone.getPhoneNumber())
                 .isActive(business.getIsActive() && phone.getIsActive())
                 .build();
     }

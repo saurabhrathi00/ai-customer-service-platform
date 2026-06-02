@@ -20,24 +20,18 @@ import java.time.Instant;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "business_phone_numbers")
-public class BusinessPhoneNumberEntity {
+@Table(name = "telephony_providers")
+public class TelephonyProviderEntity {
 
     @Id
     @Column(name = "id", updatable = false, nullable = false)
     private String id;
 
-    @Column(name = "business_id", nullable = false)
-    private String businessId;
+    @Column(name = "name", nullable = false)
+    private String name;
 
-    @Column(name = "phone_number", nullable = false, unique = true)
-    private String phoneNumber;
-
-    @Column(name = "provider_id", nullable = false)
-    private String providerId;
-
-    @Column(name = "label")
-    private String label;
+    @Column(name = "slug", nullable = false, unique = true)
+    private String slug;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;

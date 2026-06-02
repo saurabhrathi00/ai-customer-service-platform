@@ -26,7 +26,9 @@ export interface BusinessResponse {
 export interface PhoneNumberResponse {
   id: string;
   businessId: string;
-  twilioNumber: string;
+  phoneNumber: string;
+  providerId: string;
+  providerSlug: string | null;
   label: string | null;
   isActive: boolean;
   createdAt: string;
