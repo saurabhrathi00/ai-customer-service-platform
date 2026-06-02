@@ -404,10 +404,15 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                         }
                         lastFinalText = text;
                         lastFinalAtMs = now;
-                        log.debug("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
-                                callId, conf, messageType, text);
-                        sink.accept(new TranscriptEvent(
-                                transliterate ? DevanagariTransliterator.transliterate(text) : text, true, conf));
+                        String output = transliterate ? DevanagariTransliterator.transliterate(text) : text;
+                        if (transliterate && !output.equals(text)) {
+                            log.info("[stt] FINAL callId={} conf={} raw=\"{}\" transliterated=\"{}\"",
+                                    callId, conf, text, output);
+                        } else {
+                            log.info("[stt] FINAL callId={} conf={} text=\"{}\"",
+                                    callId, conf, output);
+                        }
+                        sink.accept(new TranscriptEvent(output, true, conf));
                     }
                     case "error", "auth_error", "quota_exceeded", "rate_limited",
                          "input_error", "chunk_size_exceeded", "transcriber_error" ->
