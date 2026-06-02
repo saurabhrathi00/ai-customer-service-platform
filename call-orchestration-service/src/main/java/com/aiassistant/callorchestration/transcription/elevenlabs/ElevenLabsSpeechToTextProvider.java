@@ -126,7 +126,8 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         boolean manual = "manual".equalsIgnoreCase(el.getSttCommitStrategy());
         ManualCommitState state = new ManualCommitState(silenceMs, manual);
 
-        Listener listener = new Listener(callId, onTranscript, mapper, state);
+        boolean transliterate = configs.getStt() != null && configs.getStt().isTransliterateDevanagari();
+        Listener listener = new Listener(callId, onTranscript, mapper, state, transliterate);
 
         WebSocket ws;
         try {
@@ -321,13 +322,15 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         private static final long DEDUPE_WINDOW_MS = 1500L;
         private volatile String lastFinalText = null;
         private volatile long lastFinalAtMs = 0L;
+        private final boolean transliterate;
 
         Listener(String callId, Consumer<TranscriptEvent> sink, ObjectMapper mapper,
-                 ManualCommitState state) {
+                 ManualCommitState state, boolean transliterate) {
             this.callId = callId;
             this.sink = sink;
             this.mapper = mapper;
             this.state = state;
+            this.transliterate = transliterate;
         }
 
         @Override
@@ -378,7 +381,7 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                                         callId, conf, text);
                             }
                             sink.accept(new TranscriptEvent(
-                                    DevanagariTransliterator.transliterate(text), false, conf));
+                                    transliterate ? DevanagariTransliterator.transliterate(text) : text, false, conf));
                         }
                     }
                     case "committed_transcript", "committed_transcript_with_timestamps" -> {
@@ -404,7 +407,7 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                         log.debug("[stt] FINAL    callId={} conf={} type={} text=\"{}\"",
                                 callId, conf, messageType, text);
                         sink.accept(new TranscriptEvent(
-                                DevanagariTransliterator.transliterate(text), true, conf));
+                                transliterate ? DevanagariTransliterator.transliterate(text) : text, true, conf));
                     }
                     case "error", "auth_error", "quota_exceeded", "rate_limited",
                          "input_error", "chunk_size_exceeded", "transcriber_error" ->

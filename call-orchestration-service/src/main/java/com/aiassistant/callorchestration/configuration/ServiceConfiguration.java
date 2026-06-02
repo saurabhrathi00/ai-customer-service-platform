@@ -143,6 +143,10 @@ public class ServiceConfiguration {
          *  instead of MESSAGE — ai-conv responds with a canned "please repeat"
          *  reply (no LLM round-trip). */
         private Double confidenceThreshold = 0.5;
+        /** When true, Devanagari script in STT output is transliterated to
+         *  Latin (Romanised Hindi). When false, the original script is
+         *  passed through as-is. */
+        private boolean transliterateDevanagari = true;
     }
 
     @Data
