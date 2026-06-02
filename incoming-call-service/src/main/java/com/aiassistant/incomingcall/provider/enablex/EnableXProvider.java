@@ -45,16 +45,24 @@ public class EnableXProvider implements TelephonyProvider {
     @Override
     public void verifySignature(HttpServletRequest request) {
         try {
+            StringBuilder hdrs = new StringBuilder();
+            request.getHeaderNames().asIterator().forEachRemaining(h ->
+                    hdrs.append(h).append("=").append(request.getHeader(h)).append("; "));
+            log.info("[enablex] headers: {}", hdrs);
+
             byte[] body = request.getInputStream().readAllBytes();
             if (body.length == 0) {
                 log.info("Empty body — treating as EnableX URL validation probe");
                 return;
             }
 
+            String rawBody = new String(body, StandardCharsets.UTF_8);
+            log.info("[enablex] raw body ({} bytes): {}", body.length, rawBody);
+
             JsonNode root = objectMapper.readTree(body);
             String encryptedData = root.path("encrypted_data").asText(null);
             if (encryptedData == null || encryptedData.isBlank()) {
-                log.info("No encrypted_data — treating as EnableX URL validation probe");
+                log.info("No encrypted_data — fields present: {}", root.fieldNames().hasNext() ? root : "none");
                 return;
             }
 
