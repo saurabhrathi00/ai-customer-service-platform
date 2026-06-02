@@ -101,7 +101,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             switch (event) {
                 case "connected" -> log.info("[enablex] <- CONNECTED callId={} raw={}", session.getCallId(), payload);
 
-                case "start" -> handleStart(session, root);
+                case "start", "start_media" -> handleStart(session, root);
 
                 case "media" -> {
                     String b64 = root.path("media").path("payload").asText(null);
@@ -111,13 +111,11 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     }
                 }
 
-                case "stop" -> {
-                    log.info("[enablex] call stopped callId={}", session.getCallId());
+                case "stop", "stop_media" -> {
+                    log.info("[enablex] call stopped callId={} event={}", session.getCallId(), event);
                     cancelSilenceWatchdog(session);
                     safeEndAiConversation(session.getCallId());
                 }
-
-                case "start_media" -> log.info("[enablex] <- START_MEDIA callId={}", session.getCallId());
 
                 case "dtmf" -> log.info("[enablex] DTMF callId={} digit={}",
                         session.getCallId(), root.path("dtmf").path("digit").asText());
@@ -131,12 +129,20 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private void handleStart(CallSession session, JsonNode root) {
+        if (session.getProviderAttributes().containsKey("startHandled")) {
+            log.info("[enablex] ignoring duplicate start callId={}", session.getCallId());
+            return;
+        }
+        session.getProviderAttributes().put("startHandled", true);
         log.info("[enablex] <- START callId={} payload={}", session.getCallId(), root.toString());
         JsonNode start = root.path("start");
-        String streamSid = start.path("streamSid").asText(
-                start.path("stream_sid").asText(session.getCallId()));
-        String callSid = start.path("callSid").asText(
-                start.path("call_sid").asText(session.getCallId()));
+        if (start.isMissingNode()) start = root;
+        String streamSid = start.path("stream_id").asText(
+                start.path("streamSid").asText(
+                        start.path("stream_sid").asText(session.getCallId())));
+        String callSid = start.path("voice_id").asText(
+                start.path("callSid").asText(
+                        start.path("call_sid").asText(session.getCallId())));
         JsonNode fmt = start.path("media_format");
         if (fmt.isMissingNode()) fmt = start.path("mediaFormat");
         String encoding = fmt.path("encoding").asText("audio/x-mulaw");
