@@ -171,9 +171,17 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         private final ObjectMapper mapper;
         private final int sampleRateHz;
         private final ManualCommitState state;
-        // Serialise sends — java.net.http.WebSocket requires the previous send to complete first.
         private final AtomicReference<CompletableFuture<WebSocket>> sendChain =
                 new AtomicReference<>(CompletableFuture.completedFuture(null));
+        private volatile boolean outputClosed = false;
+
+        // Buffer small audio frames into ~200ms batches to avoid ElevenLabs queue_overflow.
+        // At 8kHz mulaw, 200ms = 1600 bytes. We flush when the buffer reaches this
+        // threshold OR when 200ms have elapsed since the first buffered byte.
+        private static final int BUFFER_FLUSH_BYTES = 1600;
+        private static final long BUFFER_FLUSH_MS = 200L;
+        private final java.io.ByteArrayOutputStream audioBuffer = new java.io.ByteArrayOutputStream(BUFFER_FLUSH_BYTES * 2);
+        private volatile long bufferFirstByteMs = 0;
 
         ElevenLabsSttSession(String callId, WebSocket ws, ObjectMapper mapper,
                              int sampleRateHz, ManualCommitState state) {
@@ -187,7 +195,51 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
         @Override
         public void pushAudio(byte[] audio) {
             if (audio == null || audio.length == 0) return;
-            // 1) Send the audio chunk.
+            if (outputClosed) return;
+
+            boolean shouldFlush;
+            byte[] toSend = null;
+            synchronized (audioBuffer) {
+                if (audioBuffer.size() == 0) {
+                    bufferFirstByteMs = System.currentTimeMillis();
+                }
+                audioBuffer.write(audio, 0, audio.length);
+                shouldFlush = audioBuffer.size() >= BUFFER_FLUSH_BYTES
+                        || (System.currentTimeMillis() - bufferFirstByteMs) >= BUFFER_FLUSH_MS;
+                if (shouldFlush) {
+                    toSend = audioBuffer.toByteArray();
+                    audioBuffer.reset();
+                }
+            }
+
+            if (shouldFlush && toSend != null) {
+                sendAudioChunk(toSend);
+            }
+
+            if (state != null && state.manual && state.hasUncommittedPartial.get()) {
+                long now = System.currentTimeMillis();
+                if (now - state.lastPartialAtMs >= state.silenceMs
+                        && state.hasUncommittedPartial.compareAndSet(true, false)) {
+                    flushBuffer();
+                    log.info("[elevenlabs-stt] callId={} sending manual commit after {} ms silence",
+                            callId, now - state.lastPartialAtMs);
+                    sendCommit();
+                }
+            }
+        }
+
+        private void flushBuffer() {
+            byte[] toSend;
+            synchronized (audioBuffer) {
+                if (audioBuffer.size() == 0) return;
+                toSend = audioBuffer.toByteArray();
+                audioBuffer.reset();
+            }
+            sendAudioChunk(toSend);
+        }
+
+        private void sendAudioChunk(byte[] audio) {
+            if (outputClosed) return;
             String json;
             try {
                 ObjectNode msg = mapper.createObjectNode();
@@ -203,29 +255,17 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
             }
             sendChain.updateAndGet(prev -> prev.thenCompose(ignored -> ws.sendText(json, true))
                     .exceptionally(ex -> {
-                        log.warn("[elevenlabs-stt] sendText failed callId={}: {}",
-                                callId, ex.getMessage());
+                        if (!outputClosed) {
+                            outputClosed = true;
+                            log.warn("[elevenlabs-stt] sendText failed callId={} (suppressing further): {}",
+                                    callId, ex.getMessage());
+                        }
                         return ws;
                     }));
-
-            // 2) Manual-commit check: if we've received a partial AND silence has
-            //    elapsed since, send the commit message ourselves so the server
-            //    finalises the turn promptly. CAS prevents double-sending.
-            if (state != null && state.manual && state.hasUncommittedPartial.get()) {
-                long now = System.currentTimeMillis();
-                if (now - state.lastPartialAtMs >= state.silenceMs
-                        && state.hasUncommittedPartial.compareAndSet(true, false)) {
-                    log.info("[elevenlabs-stt] callId={} sending manual commit after {} ms silence",
-                            callId, now - state.lastPartialAtMs);
-                    sendCommit();
-                }
-            }
         }
 
         private void sendCommit() {
-            // ElevenLabs Scribe realtime expects a `commit:true` flag on an
-            // input_audio_chunk message (not a separate "commit" message type).
-            // We send an empty chunk with the flag set to force end-of-turn.
+            if (outputClosed) return;
             String json;
             try {
                 ObjectNode msg = mapper.createObjectNode();
@@ -241,14 +281,19 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
             }
             sendChain.updateAndGet(prev -> prev.thenCompose(ignored -> ws.sendText(json, true))
                     .exceptionally(ex -> {
-                        log.warn("[elevenlabs-stt] commit send failed callId={}: {}",
-                                callId, ex.getMessage());
+                        if (!outputClosed) {
+                            outputClosed = true;
+                            log.warn("[elevenlabs-stt] commit send failed callId={}: {}",
+                                    callId, ex.getMessage());
+                        }
                         return ws;
                     }));
         }
 
         @Override
         public void close() {
+            outputClosed = true;
+            flushBuffer();
             try {
                 ws.sendClose(WebSocket.NORMAL_CLOSURE, "call ended")
                         .orTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
