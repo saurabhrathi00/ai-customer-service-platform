@@ -21,8 +21,8 @@ public class InternalBusinessController {
 
     @GetMapping("/lookup")
     @PreAuthorize("hasAuthority('SCOPE_business.internal.read')")
-    public ResponseEntity<BusinessLookupResponse> lookup(@RequestParam("twilioNumber") String twilioNumber) {
-        return ResponseEntity.ok(businessService.lookupByTwilioNumber(twilioNumber));
+    public ResponseEntity<BusinessLookupResponse> lookup(@RequestParam("phoneNumber") String phoneNumber) {
+        return ResponseEntity.ok(businessService.lookupByPhoneNumber(phoneNumber));
     }
 
     @GetMapping("/{id}/exists")

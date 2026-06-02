@@ -64,7 +64,7 @@ public class TelephonyWebhookController {
                     .body(response.getBody());
         }
         try {
-            BusinessLookupResponse business = businessLookupService.lookupByTwilioNumber(call.getToNumber());
+            BusinessLookupResponse business = businessLookupService.lookupByPhoneNumber(call.getToNumber());
             if (business == null) {
                 log.warn("Business lookup returned null for To={} (provider={}), returning fallback",
                         call.getToNumber(), provider.name());

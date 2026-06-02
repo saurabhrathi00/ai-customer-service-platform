@@ -10,6 +10,6 @@ import lombok.extern.jackson.Jacksonized;
 public class BusinessLookupResponse {
     String businessId;
     String name;
-    String twilioNumber;
+    String phoneNumber;
     Boolean isActive;
 }

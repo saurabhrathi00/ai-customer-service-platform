@@ -30,22 +30,22 @@ public class BusinessLookupService {
 
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    public BusinessLookupResponse lookupByTwilioNumber(String twilioNumber) {
-        CacheEntry entry = cache.get(twilioNumber);
+    public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
+        CacheEntry entry = cache.get(phoneNumber);
         Instant now = Instant.now();
         if (entry != null && now.isBefore(entry.expiresAt)) {
             if (entry.notFound) {
-                throw new BusinessNotFoundException("No business for " + twilioNumber + " (cached)");
+                throw new BusinessNotFoundException("No business for " + phoneNumber + " (cached)");
             }
             return entry.value;
         }
 
         try {
-            BusinessLookupResponse value = userBusinessClient.lookupByTwilioNumber(twilioNumber);
-            cache.put(twilioNumber, CacheEntry.hit(value, now.plus(Duration.ofSeconds(ttlSeconds))));
+            BusinessLookupResponse value = userBusinessClient.lookupByPhoneNumber(phoneNumber);
+            cache.put(phoneNumber, CacheEntry.hit(value, now.plus(Duration.ofSeconds(ttlSeconds))));
             return value;
         } catch (BusinessNotFoundException ex) {
-            cache.put(twilioNumber, CacheEntry.miss(now.plus(Duration.ofSeconds(negativeTtlSeconds))));
+            cache.put(phoneNumber, CacheEntry.miss(now.plus(Duration.ofSeconds(negativeTtlSeconds))));
             throw ex;
         }
     }

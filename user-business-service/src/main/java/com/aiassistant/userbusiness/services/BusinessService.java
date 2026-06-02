@@ -101,15 +101,15 @@ public class BusinessService {
         return BusinessMapper.toResponse(saved);
     }
 
-    public BusinessLookupResponse lookupByTwilioNumber(String twilioNumber) {
-        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByTwilioNumber(twilioNumber)
+    public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
+        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByTwilioNumber(phoneNumber)
                 .orElseThrow(() -> new BusinessNotFoundException(
-                        "No business found for phone number: " + twilioNumber));
+                        "No business found for phone number: " + phoneNumber));
         BusinessEntity business = loadBusiness(phone.getBusinessId());
         return BusinessLookupResponse.builder()
                 .businessId(business.getId())
                 .name(business.getName())
-                .twilioNumber(phone.getTwilioNumber())
+                .phoneNumber(phone.getTwilioNumber())
                 .isActive(business.getIsActive() && phone.getIsActive())
                 .build();
     }

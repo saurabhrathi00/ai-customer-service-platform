@@ -35,14 +35,12 @@ public class UserBusinessClient {
         this.serviceConfiguration = serviceConfiguration;
     }
 
-    public BusinessLookupResponse lookupByTwilioNumber(String twilioNumber) {
+    public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
         String token = serviceTokenClient.getToken();
-        // Build an absolute URI so the default UriBuilderFactory does not re-parse and
-        // strip the percent-encoding on '+' (which Tomcat would otherwise decode as a space).
         String baseUrl = serviceConfiguration.getUserBusinessService().getBaseUrl();
         URI uri = URI.create(baseUrl
-                + "/api/internal/business/lookup?twilioNumber="
-                + URLEncoder.encode(twilioNumber, StandardCharsets.UTF_8));
+                + "/api/internal/business/lookup?phoneNumber="
+                + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8));
         log.info("Looking up business via {}", uri);
         try {
             return userBusinessRestClient.get()
@@ -52,7 +50,7 @@ public class UserBusinessClient {
                     .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                         if (res.getStatusCode().value() == 404) {
                             throw new BusinessNotFoundException(
-                                    "No business found for Twilio number " + twilioNumber);
+                                    "No business found for phone number " + phoneNumber);
                         }
                         throw new DownstreamServiceException(
                                 "user-business-service returned " + res.getStatusCode());
