@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.aiassistant.incomingcall.util.PhoneNumberParser;
+
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @RestController
@@ -63,8 +65,12 @@ public class TelephonyWebhookController {
                     .contentType(response.getContentType())
                     .body(response.getBody());
         }
+
+        String normalizedTo = PhoneNumberParser.normalize(call.getToNumber());
+        log.info("Normalized To number: raw={} normalized={}", call.getToNumber(), normalizedTo);
+
         try {
-            BusinessLookupResponse business = businessLookupService.lookupByPhoneNumber(call.getToNumber());
+            BusinessLookupResponse business = businessLookupService.lookupByPhoneNumber(normalizedTo);
             if (business == null) {
                 log.warn("Business lookup returned null for To={} (provider={}), returning fallback",
                         call.getToNumber(), provider.name());

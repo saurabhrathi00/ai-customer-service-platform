@@ -25,10 +25,14 @@ const mobileSchema = z.object({
     .min(1, 'Phone number is required')
     .refine((v) => {
       const digits = v.replace(/[\s\-()]/g, '');
-      if (digits.startsWith('+91')) return /^\+91\d{10}$/.test(digits);
-      if (digits.startsWith('0')) return /^0\d{10}$/.test(digits);
-      return /^\d{10}$/.test(digits);
-    }, 'Enter a valid 10-digit mobile number'),
+      // +91XXXXXXXXXX or 91XXXXXXXXXX (with country code)
+      if (/^\+?91[6-9]\d{9}$/.test(digits)) return true;
+      // 0XXXXXXXXXX (local dialing)
+      if (/^0[6-9]\d{9}$/.test(digits)) return true;
+      // XXXXXXXXXX (10 digit mobile starting with 6-9)
+      if (/^[6-9]\d{9}$/.test(digits)) return true;
+      return false;
+    }, 'Enter a valid 10-digit mobile number (starting with 6-9)'),
   label: z.string().max(100).optional(),
 });
 
@@ -48,6 +52,12 @@ const landlineSchema = z.object({
 
 const schema = z.discriminatedUnion('phoneType', [mobileSchema, landlineSchema]);
 type Values = z.infer<typeof schema>;
+
+function normalizeForStorage(raw: string): string {
+  let num = raw.replace(/[\s\-()]/g, '');
+  if (num.startsWith('+')) num = num.substring(1);
+  return num;
+}
 
 export function PhoneNumbersCard() {
   const businessId = useAuthStore((s) => s.businessId)!;
@@ -165,7 +175,7 @@ function AddDialog({
   const add = useMutation({
     mutationFn: (v: Values) =>
       business.addPhoneNumber(businessId, {
-        twilioNumber: v.twilioNumber.trim(),
+        twilioNumber: normalizeForStorage(v.twilioNumber),
         label: v.label,
       }),
     onSuccess: () => {

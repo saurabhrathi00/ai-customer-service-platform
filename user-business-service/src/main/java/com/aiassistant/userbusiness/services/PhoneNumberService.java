@@ -36,12 +36,16 @@ public class PhoneNumberService {
     @Transactional
     public PhoneNumberResponse add(String businessId, AddPhoneNumberRequest request) {
         assertBusinessExists(businessId);
-        if (phoneNumberRepository.existsByTwilioNumber(request.getTwilioNumber())) {
-            throw new ConflictException("Phone number already assigned: " + request.getTwilioNumber());
+        String phoneNumber = request.getTwilioNumber();
+        if (phoneNumber != null && phoneNumber.startsWith("+")) {
+            phoneNumber = phoneNumber.substring(1);
+        }
+        if (phoneNumberRepository.existsByTwilioNumber(phoneNumber)) {
+            throw new ConflictException("Phone number already assigned: " + phoneNumber);
         }
         BusinessPhoneNumberEntity entity = BusinessPhoneNumberEntity.builder()
                 .businessId(businessId)
-                .twilioNumber(request.getTwilioNumber())
+                .twilioNumber(phoneNumber)
                 .label(request.getLabel())
                 .isActive(true)
                 .build();
