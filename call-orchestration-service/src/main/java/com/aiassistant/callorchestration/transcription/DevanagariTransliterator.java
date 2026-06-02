@@ -126,6 +126,11 @@ public final class DevanagariTransliterator {
     /**
      * Transliterate any Devanagari in {@code input} to natural Latin script.
      * Non-Devanagari characters pass through unchanged.
+     * <p>
+     * Applies Hindi word-final schwa deletion: the inherent 'a' after the
+     * last consonant of a multi-character Devanagari word is dropped
+     * (e.g. और → "aur" not "aura", सब → "sab" not "saba"). Standalone
+     * single-consonant words like न keep their schwa ("na").
      */
     public static String transliterate(String input) {
         if (input == null || input.isEmpty()) return input;
@@ -138,6 +143,7 @@ public final class DevanagariTransliterator {
 
         StringBuilder out = new StringBuilder(input.length() * 2);
         int len = input.length();
+        boolean wordHasPriorContent = false;
 
         for (int i = 0; i < len; i++) {
             char ch = input.charAt(i);
@@ -145,18 +151,20 @@ public final class DevanagariTransliterator {
             // --- Non-Devanagari: pass through ---
             if (!isDevanagari(ch)) {
                 out.append(ch);
+                wordHasPriorContent = false;
                 continue;
             }
 
             // --- Anusvara / Chandrabindu / Visarga ---
-            if (ch == ANUSVARA)      { out.append('n'); continue; }
-            if (ch == CHANDRABINDU)  { out.append('n'); continue; }
-            if (ch == VISARGA)       { out.append('h'); continue; }
+            if (ch == ANUSVARA)      { out.append('n'); wordHasPriorContent = true; continue; }
+            if (ch == CHANDRABINDU)  { out.append('n'); wordHasPriorContent = true; continue; }
+            if (ch == VISARGA)       { out.append('h'); wordHasPriorContent = true; continue; }
 
             // --- Independent vowel ---
             String iv = independentVowel(ch);
             if (iv != null) {
                 out.append(iv);
+                wordHasPriorContent = true;
                 continue;
             }
 
@@ -191,29 +199,36 @@ public final class DevanagariTransliterator {
                         out.append('a');
                     } else {
                         // Non-Devanagari follows (space, punctuation, Latin) —
-                        // word boundary, append inherent 'a'
-                        out.append('a');
+                        // word boundary. Drop the inherent 'a' if this is a
+                        // multi-character Hindi word (schwa deletion).
+                        if (!wordHasPriorContent) {
+                            out.append('a');
+                        }
                     }
                 } else {
-                    // End of string — append inherent 'a'
-                    out.append('a');
+                    // End of string — drop schwa for multi-char words.
+                    if (!wordHasPriorContent) {
+                        out.append('a');
+                    }
                 }
+                wordHasPriorContent = true;
                 continue;
             }
 
             // --- Virama / Nukta / Matra appearing without a preceding consonant ---
             if (ch == VIRAMA || ch == NUKTA) continue; // orphaned; skip
             String m = matra(ch);
-            if (m != null) { out.append(m); continue; }
+            if (m != null) { out.append(m); wordHasPriorContent = true; continue; }
 
             // --- Devanagari digits ---
             if (ch >= '०' && ch <= '९') {
                 out.append((char) ('0' + (ch - '०')));
+                wordHasPriorContent = true;
                 continue;
             }
 
             // --- Danda / double danda → period ---
-            if (ch == '।' || ch == '॥') { out.append('.'); continue; }
+            if (ch == '।' || ch == '॥') { out.append('.'); wordHasPriorContent = false; continue; }
 
             // Fallback: emit the character as-is
             out.append(ch);
