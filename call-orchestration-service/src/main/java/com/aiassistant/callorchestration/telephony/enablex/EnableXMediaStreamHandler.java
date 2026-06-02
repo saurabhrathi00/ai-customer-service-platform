@@ -48,6 +48,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     private final ConversationCoordinator conversationCoordinator;
     private final AiConversationWsClient aiConversationWsClient;
     private final FillerAudioCache fillerAudioCache;
+    private final EnableXApiClient enableXApiClient;
     @Qualifier("ttsExecutor")
     private final Executor ttsExecutor;
     @Qualifier("silenceWatchdogScheduler")
@@ -622,18 +623,25 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         }
 
         private void closeStream(String callId, WebSocketSession ws) {
-            if (ws == null || !ws.isOpen()) return;
-            try {
-                ObjectNode frame = objectMapper.createObjectNode();
-                frame.put("event", "stop");
-                frame.put("streamSid", (String) session.getProviderAttributes().get("streamSid"));
-                synchronized (ws) {
-                    ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+            String voiceId = (String) session.getProviderAttributes().get("enablexCallSid");
+            // 1) Send clear_media on WS to stop streaming immediately
+            if (ws != null && ws.isOpen()) {
+                try {
+                    ObjectNode frame = objectMapper.createObjectNode();
+                    frame.put("event", "clear_media");
+                    frame.put("streamSid", (String) session.getProviderAttributes().get("streamSid"));
+                    synchronized (ws) {
+                        ws.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
+                    }
+                    ws.close();
+                    log.info("[enablex] WS closed callId={}", callId);
+                } catch (Exception ex) {
+                    log.warn("[enablex] WS close failed callId={}: {}", callId, ex.getMessage());
                 }
-                ws.close();
-                log.info("[enablex] stream closed callId={}", callId);
-            } catch (Exception ex) {
-                log.warn("[enablex] stream close failed callId={}: {}", callId, ex.getMessage());
+            }
+            // 2) Hang up the actual voice call via REST
+            if (voiceId != null) {
+                enableXApiClient.hangupCall(voiceId);
             }
         }
     }

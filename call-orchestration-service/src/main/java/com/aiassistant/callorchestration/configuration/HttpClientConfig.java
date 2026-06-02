@@ -10,11 +10,24 @@ import org.springframework.web.client.RestClient;
 public class HttpClientConfig {
 
     private final ServiceConfiguration serviceConfiguration;
+    private final SecretsConfiguration secretsConfiguration;
 
     @Bean(name = "authServiceRestClient")
     public RestClient authServiceRestClient() {
         return RestClient.builder()
                 .baseUrl(serviceConfiguration.getAuthService().getBaseUrl())
+                .build();
+    }
+
+    @Bean(name = "enablexRestClient")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            prefix = "secrets.enablex", name = "appId")
+    public RestClient enablexRestClient() {
+        return RestClient.builder()
+                .baseUrl(serviceConfiguration.getEnablexApi().getBaseUrl())
+                .defaultHeaders(headers -> headers.setBasicAuth(
+                        secretsConfiguration.getEnablex().getAppId(),
+                        secretsConfiguration.getEnablex().getAppKey()))
                 .build();
     }
 

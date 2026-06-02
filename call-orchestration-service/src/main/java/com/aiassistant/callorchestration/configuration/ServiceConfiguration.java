@@ -23,6 +23,12 @@ public class ServiceConfiguration {
     private Filler filler = new Filler();
     private Silence silence = new Silence();
     private Barge barge = new Barge();
+    private EnableXApi enablexApi;
+
+    @Data
+    public static class EnableXApi {
+        private String baseUrl;
+    }
 
     @Data
     public static class Silence {
