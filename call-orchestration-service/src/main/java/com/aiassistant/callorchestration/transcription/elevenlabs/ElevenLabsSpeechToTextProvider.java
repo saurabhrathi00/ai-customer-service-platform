@@ -406,10 +406,10 @@ public class ElevenLabsSpeechToTextProvider implements SpeechToTextProvider {
                         lastFinalAtMs = now;
                         String output = transliterate ? DevanagariTransliterator.transliterate(text) : text;
                         if (transliterate && !output.equals(text)) {
-                            log.info("[stt] FINAL callId={} conf={} raw=\"{}\" transliterated=\"{}\"",
+                            log.debug("[stt] FINAL callId={} conf={} raw=\"{}\" transliterated=\"{}\"",
                                     callId, conf, text, output);
                         } else {
-                            log.info("[stt] FINAL callId={} conf={} text=\"{}\"",
+                            log.debug("[stt] FINAL callId={} conf={} text=\"{}\"",
                                     callId, conf, output);
                         }
                         sink.accept(new TranscriptEvent(output, true, conf));
