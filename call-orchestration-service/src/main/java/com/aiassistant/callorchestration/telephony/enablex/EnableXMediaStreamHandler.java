@@ -117,6 +117,8 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     safeEndAiConversation(session.getCallId());
                 }
 
+                case "start_media" -> log.info("[enablex] <- START_MEDIA callId={}", session.getCallId());
+
                 case "dtmf" -> log.info("[enablex] DTMF callId={} digit={}",
                         session.getCallId(), root.path("dtmf").path("digit").asText());
 

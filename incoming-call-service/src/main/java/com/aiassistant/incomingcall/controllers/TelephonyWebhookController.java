@@ -84,14 +84,24 @@ public class TelephonyWebhookController {
                         call.getToNumber(), business.getBusinessId(),
                         business.getName(), business.getIsActive());
 
-                handoff = StreamHandoff.builder()
-                        .callId(call.getCallId())
-                        .businessId(business.getBusinessId())
-                        .businessName(business.getName())
-                        .customerPhone(call.getFromNumber())
-                        .wsUrl(buildWsUrl(provider.name(), call.getCallId()))
-                        .build();
-                response = provider.buildStreamHandoff(handoff);
+                String status = call.getCallStatus();
+                boolean isInitialEvent = status == null
+                        || status.equalsIgnoreCase("incomingcall")
+                        || status.equalsIgnoreCase("ringing");
+
+                if (isInitialEvent) {
+                    handoff = StreamHandoff.builder()
+                            .callId(call.getCallId())
+                            .businessId(business.getBusinessId())
+                            .businessName(business.getName())
+                            .customerPhone(call.getFromNumber())
+                            .wsUrl(buildWsUrl(provider.name(), call.getCallId()))
+                            .build();
+                    response = provider.buildStreamHandoff(handoff);
+                } else {
+                    log.info("Skipping handoff for status={} (provider={})", status, provider.name());
+                    response = new TelephonyResponse("{\"status\":\"ok\"}", org.springframework.http.MediaType.APPLICATION_JSON);
+                }
             }
         } catch (BusinessNotFoundException ex) {
             log.warn("No business mapped to To={} (provider={}), returning fallback",
