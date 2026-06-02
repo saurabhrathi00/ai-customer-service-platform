@@ -60,18 +60,25 @@ public class EnableXProvider implements TelephonyProvider {
             log.info("[enablex] raw body ({} bytes): {}", body.length, rawBody);
 
             JsonNode root = objectMapper.readTree(body);
+
+            // EnableX may send plaintext JSON (voice_id + state) or encrypted (encrypted_data)
             String encryptedData = root.path("encrypted_data").asText(null);
-            if (encryptedData == null || encryptedData.isBlank()) {
-                log.info("No encrypted_data — fields present: {}", root.fieldNames().hasNext() ? root : "none");
+            if (encryptedData != null && !encryptedData.isBlank()) {
+                String algo = request.getHeader("x-algoritm");
+                String format = request.getHeader("x-format");
+                String encoding = request.getHeader("x-encoding");
+                String decrypted = decrypt(encryptedData, algo, format, encoding);
+                request.setAttribute(DECRYPTED_ATTR, decrypted);
                 return;
             }
 
-            String algo = request.getHeader("x-algoritm");
-            String format = request.getHeader("x-format");
-            String encoding = request.getHeader("x-encoding");
+            // Plaintext event — store raw body directly
+            if (root.has("voice_id")) {
+                request.setAttribute(DECRYPTED_ATTR, rawBody);
+                return;
+            }
 
-            String decrypted = decrypt(encryptedData, algo, format, encoding);
-            request.setAttribute(DECRYPTED_ATTR, decrypted);
+            log.info("[enablex] no voice_id or encrypted_data — treating as validation probe");
 
         } catch (TelephonySignatureInvalidException ex) {
             throw ex;
