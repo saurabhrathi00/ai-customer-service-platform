@@ -14,6 +14,7 @@ public class SecretsConfiguration {
     private AuthService authService;
     private Twilio twilio;
     private Exotel exotel;
+    private Enablex enablex;
     private ElevenLabs elevenlabs;
     private Deepgram deepgram;
 
@@ -47,6 +48,12 @@ public class SecretsConfiguration {
     public static class Exotel {
         private String apiKey;
         private String apiToken;
+    }
+
+    @Data
+    public static class Enablex {
+        private String appId;
+        private String appKey;
     }
 
     @Data

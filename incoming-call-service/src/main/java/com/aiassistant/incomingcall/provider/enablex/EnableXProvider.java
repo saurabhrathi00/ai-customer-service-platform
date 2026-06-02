@@ -121,12 +121,21 @@ public class EnableXProvider implements TelephonyProvider {
         CompletableFuture.runAsync(() -> {
             try {
                 enableXApiClient.acceptCall(handoff.getCallId());
-                enableXApiClient.startStream(handoff.getCallId(), handoff.getWsUrl());
+                String wsUrl = handoff.getWsUrl()
+                        + "?businessId=" + encode(handoff.getBusinessId())
+                        + "&customerPhone=" + encode(handoff.getCustomerPhone())
+                        + "&businessName=" + encode(handoff.getBusinessName());
+                enableXApiClient.startStream(handoff.getCallId(), wsUrl);
             } catch (Exception ex) {
                 log.error("EnableX post-handoff failed for voiceId={}: {}",
                         handoff.getCallId(), ex.getMessage(), ex);
             }
         });
+    }
+
+    private static String encode(String value) {
+        if (value == null) return "";
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String decrypt(String encryptedData, String algo, String format, String encoding) throws Exception {
