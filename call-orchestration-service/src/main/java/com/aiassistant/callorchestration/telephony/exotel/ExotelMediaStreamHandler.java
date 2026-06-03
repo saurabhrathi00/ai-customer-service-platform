@@ -27,6 +27,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -76,6 +81,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private static final int    MIN_FORWARD_CHARS = 2;
+    private static final Path   RECORDING_DIR = Path.of("/app/logs/recordings");
 
     @Override
     public String providerId() {
@@ -187,6 +193,9 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         log.info("[exotel] call started callId={} encoding={} sampleRate={} bitRate={} codec={}",
                 session.getCallId(), encoding, sampleRate, bitRate, codec);
 
+        session.getProviderAttributes().put("audioBuffer", new ByteArrayOutputStream());
+        session.getProviderAttributes().put("audioSampleRate", sampleRate);
+
         // Hydrate from custom_parameters (Exotel uses snake_case)
         JsonNode cp = start.path("custom_parameters");
         if (cp.isMissingNode()) cp = start.path("customParameters");
@@ -266,6 +275,10 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         if (stt instanceof SttSession sttSession) {
             sttSession.pushAudio(audioPayload);
         }
+        Object buf = session.getProviderAttributes().get("audioBuffer");
+        if (buf instanceof ByteArrayOutputStream baos) {
+            synchronized (baos) { baos.write(audioPayload, 0, audioPayload.length); }
+        }
         AudioCodec codec = (AudioCodec) session.getProviderAttributes()
                 .getOrDefault("codec", AudioCodec.MULAW);
         if (session.getGreetingDone().get() && hasVoice(audioPayload, codec)) {
@@ -301,8 +314,69 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Override
     public void onDisconnect(CallSession session, String reason) {
         log.info("[exotel] onDisconnect callId={} reason={}", session.getCallId(), reason);
+        dumpRecording(session);
         cancelSilenceWatchdog(session);
         safeEndAiConversation(session.getCallId());
+    }
+
+    private void dumpRecording(CallSession session) {
+        Object buf = session.getProviderAttributes().remove("audioBuffer");
+        if (!(buf instanceof ByteArrayOutputStream baos) || baos.size() == 0) return;
+        try {
+            AudioCodec codec = (AudioCodec) session.getProviderAttributes()
+                    .getOrDefault("codec", AudioCodec.MULAW);
+            int sampleRate = (int) session.getProviderAttributes()
+                    .getOrDefault("audioSampleRate", 8000);
+
+            byte[] raw = baos.toByteArray();
+            byte[] pcm = (codec == AudioCodec.MULAW) ? mulawToPcm16(raw) : raw;
+
+            Files.createDirectories(RECORDING_DIR);
+            Path wavFile = RECORDING_DIR.resolve(session.getCallId() + ".wav");
+            writeWav(wavFile, pcm, sampleRate);
+            double durationSecs = (double) pcm.length / (sampleRate * 2);
+            log.info("[recording] saved {} ({} bytes, {}s) callId={}",
+                    wavFile, pcm.length, String.format("%.1f", durationSecs), session.getCallId());
+        } catch (Exception ex) {
+            log.error("[recording] failed to save callId={}: {}", session.getCallId(), ex.getMessage());
+        }
+    }
+
+    private static void writeWav(Path path, byte[] pcmData, int sampleRate) throws IOException {
+        int channels = 1;
+        int bitsPerSample = 16;
+        int byteRate = sampleRate * channels * bitsPerSample / 8;
+        int blockAlign = channels * bitsPerSample / 8;
+        int dataSize = pcmData.length;
+        int chunkSize = 36 + dataSize;
+
+        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
+            // RIFF header
+            raf.writeBytes("RIFF");
+            raf.write(intToLittleEndian(chunkSize));
+            raf.writeBytes("WAVE");
+            // fmt sub-chunk
+            raf.writeBytes("fmt ");
+            raf.write(intToLittleEndian(16));          // sub-chunk size
+            raf.write(shortToLittleEndian((short) 1)); // PCM format
+            raf.write(shortToLittleEndian((short) channels));
+            raf.write(intToLittleEndian(sampleRate));
+            raf.write(intToLittleEndian(byteRate));
+            raf.write(shortToLittleEndian((short) blockAlign));
+            raf.write(shortToLittleEndian((short) bitsPerSample));
+            // data sub-chunk
+            raf.writeBytes("data");
+            raf.write(intToLittleEndian(dataSize));
+            raf.write(pcmData);
+        }
+    }
+
+    private static byte[] intToLittleEndian(int v) {
+        return new byte[]{(byte) v, (byte) (v >> 8), (byte) (v >> 16), (byte) (v >> 24)};
+    }
+
+    private static byte[] shortToLittleEndian(short v) {
+        return new byte[]{(byte) v, (byte) (v >> 8)};
     }
 
     // ─── Silence watchdog (mirrors Twilio handler) ─────────────────────
