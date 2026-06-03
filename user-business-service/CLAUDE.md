@@ -4,12 +4,12 @@
 Handles all business-related operations for the AI Customer Service Platform:
 - Business registration and login credential management
 - Business profile (name, category, description, location, operating hours)
-- Twilio phone number assignment per business
+- Phone number assignment per business (provider-agnostic: Exotel, EnableX, etc.)
 - Interest rating configuration per business (scoring rules for call prioritisation)
-- Internal endpoint for other services to look up a business by Twilio number
+- Internal endpoint for other services to look up a business by phone number
 
 This is a B2C platform — businesses are our clients. Each business gets a unique
-Business ID and one or more Twilio numbers. Customers call those numbers and are
+Business ID and one or more phone numbers. Customers call those numbers and are
 served by AI loaded with ONLY that business's knowledge.
 
 ---
@@ -171,8 +171,8 @@ updated_at      TIMESTAMP DEFAULT NOW()
 | POST | /register | Register new business |
 | GET | /{id}/profile | Get business profile |
 | PUT | /{id}/profile | Update business profile |
-| GET | /{id}/phone-numbers | List all Twilio numbers for business |
-| POST | /{id}/phone-numbers | Add a new Twilio number |
+| GET | /{id}/phone-numbers | List all phone numbers for business |
+| POST | /{id}/phone-numbers | Add a new phone number |
 | DELETE | /{id}/phone-numbers/{numberId} | Remove a phone number |
 | GET | /{id}/rating-config | Get interest rating config |
 | PUT | /{id}/rating-config | Update interest rating config |
@@ -180,7 +180,7 @@ updated_at      TIMESTAMP DEFAULT NOW()
 ### Internal — /api/internal/
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /business/lookup?twilioNumber=+1xxx | Find businessId by Twilio number (called by incoming-call-service) |
+| GET | /business/lookup?phoneNumber=91xxx | Find businessId by phone number (called by call-orchestration-service) |
 | GET | /business/{id}/exists | Check if a business exists (called by auth-service) |
 
 ---
