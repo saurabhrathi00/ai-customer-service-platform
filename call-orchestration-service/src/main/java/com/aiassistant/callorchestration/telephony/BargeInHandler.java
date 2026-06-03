@@ -2,59 +2,37 @@ package com.aiassistant.callorchestration.telephony;
 
 import com.aiassistant.callorchestration.clients.ws.AiConversationWsClient;
 import com.aiassistant.callorchestration.transcription.TranscriptEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Decides when a customer utterance counts as a barge-in on the bot, and
- * fans the cancellation out to all three layers that have audio/text
- * in-flight at that moment.
+ * cancels in-flight audio/text generation. Provider-agnostic — works with
+ * any telephony provider (Exotel, EnableX, Twilio, etc.).
  *
  * <p>One instance per {@link CallSession} — owns the per-call idempotency
  * flag so the burst of interim transcripts inside a single utterance only
  * fires the cancellation once.
  *
- * <h3>Detection — three gates (ALL must pass)</h3>
+ * <h3>Detection — gates (ALL must pass)</h3>
  * <ol>
- *   <li><b>Bot must be speaking.</b> If TTS isn't currently playing audio
- *       there is nothing to barge in on — this is just the first utterance
- *       of the next turn.</li>
- *   <li><b>Text long enough.</b> Interim transcripts are checked against a
- *       minimum character count to reject single-phoneme misfires ("ah",
- *       "um", a cough that STT hallucinates a syllable from). Finals
- *       always pass length.</li>
- *   <li><b>Confidence high enough.</b> If STT reports below-threshold
- *       confidence, treat it as noise/echo and ignore.</li>
+ *   <li>Bot must be speaking (TTS in-flight or recent activity)</li>
+ *   <li>Bot speaking for >= minBotSpeakingMs (grace period)</li>
+ *   <li>Text long enough (interims >= minBargeChars, finals always pass)</li>
+ *   <li>Confidence above threshold</li>
+ *   <li>First hit per utterance (idempotency)</li>
  * </ol>
  *
- * <h3>Actions — three atomic cancellations</h3>
+ * <h3>Actions (synchronous, generic)</h3>
  * <ol>
- *   <li><b>Twilio "clear" frame.</b> Tells the carrier to drop any bot
- *       audio it has buffered for this {@code streamSid} but not yet
- *       delivered. Without this the caller hears ~1s of stale bot audio
- *       even after we stop synthesising.</li>
+ *   <li><b>TTS epoch bump.</b> In-flight TTS tasks abort, queued chunks
+ *       are dropped, no new audio reaches the caller.</li>
  *   <li><b>{@code BARGE_IN} frame to ai-conversation-service.</b>
- *       ai-conv disposes the in-flight Reactor subscription, which
- *       cancels the upstream Gemini HTTP stream so we stop spending
- *       tokens on a question the caller already moved past. It also
- *       drops the partial reply from history so the model's memory stays
- *       coherent.</li>
- *   <li><b>Local TTS cancel.</b> Bumps the session TTS epoch. Pending
- *       ttsExecutor tasks short-circuit before sending audio; the
- *       in-flight TTS streaming loop notices the bump on its next chunk
- *       and aborts the ElevenLabs HTTP read.</li>
+ *       Cancels the LLM stream and discards the partial response from
+ *       history so the model stays coherent.</li>
  * </ol>
- *
- * <p>After detection fires once, {@link #reset()} re-arms the handler so
- * the next utterance can barge in too. Call sites reset after the STT
- * final has been forwarded as a MESSAGE — that boundary marks one
- * utterance ending and the next being eligible.
  */
 public class BargeInHandler {
 
@@ -66,7 +44,6 @@ public class BargeInHandler {
      *  before barge-in is allowed. Prevents bot-audio echo arriving as STT
      *  partials in the first second from self-barging the greeting/reply. */
     private final long minBotSpeakingMs;
-    private final ObjectMapper objectMapper;
     private final AiConversationWsClient aiWsClient;
 
     /** Per-call idempotency flag. Cleared by {@link #reset()}. */
@@ -75,12 +52,10 @@ public class BargeInHandler {
     public BargeInHandler(int minBargeChars,
                           double confidenceThreshold,
                           long minBotSpeakingMs,
-                          ObjectMapper objectMapper,
                           AiConversationWsClient aiWsClient) {
         this.minBargeChars = minBargeChars;
         this.confidenceThreshold = confidenceThreshold;
         this.minBotSpeakingMs = minBotSpeakingMs;
-        this.objectMapper = objectMapper;
         this.aiWsClient = aiWsClient;
     }
 
@@ -124,14 +99,12 @@ public class BargeInHandler {
         log.info("[barge-in] callId={} interim={} text=\"{}\"",
                 session.getCallId(), !event.isFinal(), truncate(text));
 
-        // ── ACTION 1: kill carrier-buffered bot audio ─────────────────
-        clearTwilioBuffer(session);
+        // ── ACTION 1: cancel local TTS (queued + in-flight) ───────────
+        cancelLocalTts(session);
 
         // ── ACTION 2: cancel the in-flight LLM turn on ai-conv ────────
         stopAiResponse(session);
 
-        // ── ACTION 3: cancel local TTS (queued + in-flight) ───────────
-        cancelLocalTts(session);
         return true;
     }
 
@@ -139,25 +112,6 @@ public class BargeInHandler {
      *  a MESSAGE — one utterance has ended, the next is eligible to barge. */
     public void reset() {
         barged.set(false);
-    }
-
-    // ── ACTION 1 ──────────────────────────────────────────────────────
-    private void clearTwilioBuffer(CallSession session) {
-        WebSocketSession twilioWs = (WebSocketSession) session.getProviderAttributes().get("ws");
-        String streamSid = (String) session.getProviderAttributes().get("streamSid");
-        if (twilioWs == null || !twilioWs.isOpen() || streamSid == null) return;
-        try {
-            ObjectNode frame = objectMapper.createObjectNode();
-            frame.put("event", "clear");
-            frame.put("streamSid", streamSid);
-            synchronized (twilioWs) {
-                twilioWs.sendMessage(new TextMessage(objectMapper.writeValueAsString(frame)));
-            }
-            log.info("[barge-in] twilio buffer cleared callId={}", session.getCallId());
-        } catch (Exception ex) {
-            log.warn("[barge-in] twilio clear failed callId={}: {}",
-                    session.getCallId(), ex.getMessage());
-        }
     }
 
     // ── ACTION 2 ──────────────────────────────────────────────────────

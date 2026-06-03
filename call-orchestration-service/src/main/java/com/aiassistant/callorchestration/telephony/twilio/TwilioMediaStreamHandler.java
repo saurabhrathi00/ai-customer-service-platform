@@ -183,7 +183,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     // ai-conv and local TTS in one place.
                     BargeInHandler bargeHandler = new BargeInHandler(
                             BARGE_MIN_CHARS, BARGE_CONF_MIN, BARGE_MIN_BOT_SPEAKING_MS,
-                            objectMapper, aiConversationWsClient);
+                            aiConversationWsClient);
                     session.getProviderAttributes().put("bargeInHandler", bargeHandler);
 
                     // Open AI conversation WS — sends INIT with business knowledge,

@@ -200,7 +200,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
 
         BargeInHandler bargeHandler = new BargeInHandler(
                 BARGE_MIN_CHARS, BARGE_CONF_MIN, BARGE_MIN_BOT_SPEAKING_MS,
-                objectMapper, aiConversationWsClient);
+                aiConversationWsClient);
         session.getProviderAttributes().put("bargeInHandler", bargeHandler);
 
         AiCallEventListener listener = new AiCallEventListener(session);
