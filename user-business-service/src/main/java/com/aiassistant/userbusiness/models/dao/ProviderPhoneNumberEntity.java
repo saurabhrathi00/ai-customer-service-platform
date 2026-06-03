@@ -20,21 +20,21 @@ import java.time.Instant;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "business_phone_numbers")
-public class BusinessPhoneNumberEntity {
+@Table(name = "provider_phone_numbers")
+public class ProviderPhoneNumberEntity {
 
     @Id
     @Column(name = "id", updatable = false, nullable = false)
     private String id;
 
-    @Column(name = "business_id", nullable = false)
-    private String businessId;
+    @Column(name = "provider_id", nullable = false)
+    private String providerId;
 
-    @Column(name = "provider_phone_number_id", nullable = false)
-    private String providerPhoneNumberId;
+    @Column(name = "phone_number", nullable = false, unique = true)
+    private String phoneNumber;
 
-    @Column(name = "label")
-    private String label;
+    @Column(name = "status", nullable = false)
+    private String status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -43,6 +43,9 @@ public class BusinessPhoneNumberEntity {
     void onCreate() {
         if (this.id == null) {
             this.id = new ULID().nextULID();
+        }
+        if (this.status == null) {
+            this.status = "available";
         }
         this.createdAt = Instant.now();
     }

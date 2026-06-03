@@ -125,14 +125,31 @@ created_at      TIMESTAMP DEFAULT NOW()
 updated_at      TIMESTAMP
 ```
 
-### business_phone_numbers
+### telephony_providers
 ```
 id              VARCHAR (ULID, PK)
-business_id     VARCHAR NOT NULL (FK → businesses.id)
-twilio_number   VARCHAR NOT NULL UNIQUE
-label           VARCHAR
+name            VARCHAR NOT NULL
+slug            VARCHAR NOT NULL UNIQUE
 is_active       BOOLEAN DEFAULT true
 created_at      TIMESTAMP DEFAULT NOW()
+```
+
+### provider_phone_numbers
+```
+id              VARCHAR (ULID, PK)
+provider_id     VARCHAR NOT NULL (FK → telephony_providers.id)
+phone_number    VARCHAR NOT NULL UNIQUE
+status          VARCHAR NOT NULL DEFAULT 'available'  -- available | assigned | released
+created_at      TIMESTAMP DEFAULT NOW()
+```
+
+### business_phone_numbers
+```
+id                        VARCHAR (ULID, PK)
+business_id               VARCHAR NOT NULL (FK → businesses.id)
+provider_phone_number_id  VARCHAR NOT NULL (FK → provider_phone_numbers.id)
+label                     VARCHAR
+created_at                TIMESTAMP DEFAULT NOW()
 ```
 
 ### rating_config

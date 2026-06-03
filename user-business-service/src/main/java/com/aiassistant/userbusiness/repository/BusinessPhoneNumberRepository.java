@@ -12,11 +12,7 @@ public interface BusinessPhoneNumberRepository extends JpaRepository<BusinessPho
 
     List<BusinessPhoneNumberEntity> findAllByBusinessId(String businessId);
 
-    Optional<BusinessPhoneNumberEntity> findByPhoneNumber(String phoneNumber);
-
-    Optional<BusinessPhoneNumberEntity> findByPhoneNumberAndIsActiveTrue(String phoneNumber);
+    Optional<BusinessPhoneNumberEntity> findByProviderPhoneNumberId(String providerPhoneNumberId);
 
     Optional<BusinessPhoneNumberEntity> findByIdAndBusinessId(String id, String businessId);
-
-    boolean existsByPhoneNumber(String phoneNumber);
 }

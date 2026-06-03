@@ -4,6 +4,7 @@ import com.aiassistant.userbusiness.exceptions.BusinessNotFoundException;
 import com.aiassistant.userbusiness.exceptions.ConflictException;
 import com.aiassistant.userbusiness.models.dao.BusinessEntity;
 import com.aiassistant.userbusiness.models.dao.BusinessPhoneNumberEntity;
+import com.aiassistant.userbusiness.models.dao.ProviderPhoneNumberEntity;
 import com.aiassistant.userbusiness.models.dao.RatingConfigEntity;
 import com.aiassistant.userbusiness.models.request.RegisterBusinessRequest;
 import com.aiassistant.userbusiness.models.request.UpdateBusinessProfileRequest;
@@ -12,6 +13,7 @@ import com.aiassistant.userbusiness.models.response.BusinessResponse;
 import com.aiassistant.userbusiness.models.response.ExistsResponse;
 import com.aiassistant.userbusiness.repository.BusinessPhoneNumberRepository;
 import com.aiassistant.userbusiness.repository.BusinessRepository;
+import com.aiassistant.userbusiness.repository.ProviderPhoneNumberRepository;
 import com.aiassistant.userbusiness.repository.RatingConfigRepository;
 import com.aiassistant.userbusiness.services.mapper.BusinessMapper;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,7 @@ public class BusinessService {
 
     private final BusinessRepository businessRepository;
     private final BusinessPhoneNumberRepository phoneNumberRepository;
+    private final ProviderPhoneNumberRepository providerPhoneNumberRepository;
     private final RatingConfigRepository ratingConfigRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -102,15 +105,20 @@ public class BusinessService {
     }
 
     public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
-        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByPhoneNumberAndIsActiveTrue(phoneNumber)
+        ProviderPhoneNumberEntity providerNumber = providerPhoneNumberRepository
+                .findByPhoneNumberAndStatus(phoneNumber, "assigned")
                 .orElseThrow(() -> new BusinessNotFoundException(
                         "No business found for phone number: " + phoneNumber));
-        BusinessEntity business = loadBusiness(phone.getBusinessId());
+        BusinessPhoneNumberEntity link = phoneNumberRepository
+                .findByProviderPhoneNumberId(providerNumber.getId())
+                .orElseThrow(() -> new BusinessNotFoundException(
+                        "No business found for phone number: " + phoneNumber));
+        BusinessEntity business = loadBusiness(link.getBusinessId());
         return BusinessLookupResponse.builder()
                 .businessId(business.getId())
                 .name(business.getName())
-                .phoneNumber(phone.getPhoneNumber())
-                .isActive(business.getIsActive() && phone.getIsActive())
+                .phoneNumber(providerNumber.getPhoneNumber())
+                .isActive(business.getIsActive())
                 .build();
     }
 

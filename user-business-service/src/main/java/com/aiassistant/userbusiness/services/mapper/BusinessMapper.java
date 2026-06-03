@@ -2,6 +2,7 @@ package com.aiassistant.userbusiness.services.mapper;
 
 import com.aiassistant.userbusiness.models.dao.BusinessEntity;
 import com.aiassistant.userbusiness.models.dao.BusinessPhoneNumberEntity;
+import com.aiassistant.userbusiness.models.dao.ProviderPhoneNumberEntity;
 import com.aiassistant.userbusiness.models.dao.RatingConfigEntity;
 import com.aiassistant.userbusiness.models.response.BusinessResponse;
 import com.aiassistant.userbusiness.models.response.PhoneNumberResponse;
@@ -27,20 +28,18 @@ public final class BusinessMapper {
                 .build();
     }
 
-    public static PhoneNumberResponse toResponse(BusinessPhoneNumberEntity e) {
-        return toResponse(e, null);
-    }
-
-    public static PhoneNumberResponse toResponse(BusinessPhoneNumberEntity e, String providerSlug) {
+    public static PhoneNumberResponse toResponse(BusinessPhoneNumberEntity link,
+                                                  ProviderPhoneNumberEntity providerNumber,
+                                                  String providerSlug) {
         return PhoneNumberResponse.builder()
-                .id(e.getId())
-                .businessId(e.getBusinessId())
-                .phoneNumber(e.getPhoneNumber())
-                .providerId(e.getProviderId())
+                .id(link.getId())
+                .businessId(link.getBusinessId())
+                .phoneNumber(providerNumber.getPhoneNumber())
+                .providerId(providerNumber.getProviderId())
                 .providerSlug(providerSlug)
-                .label(e.getLabel())
-                .isActive(e.getIsActive())
-                .createdAt(e.getCreatedAt())
+                .label(link.getLabel())
+                .isActive("assigned".equals(providerNumber.getStatus()))
+                .createdAt(link.getCreatedAt())
                 .build();
     }
 
