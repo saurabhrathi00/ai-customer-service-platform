@@ -111,13 +111,17 @@ class BargeInHandlerTest {
     }
 
     @Test
-    void isBotSpeaking_carrierTailKeepsTrueAfterChunksStop() {
-        // Simulate a TTS chunk landed 500ms ago — carrier tail keeps speaking=true.
-        session.setLastTtsActivityMs(System.currentTimeMillis() - 500);
+    void isBotSpeaking_estimatedPlayoutKeepsTrueWhileCarrierPlaying() {
+        // Carrier still playing — estimatedPlayoutEndMs is 2 seconds from now.
+        session.setEstimatedPlayoutEndMs(System.currentTimeMillis() + 2000);
         assertTrue(BargeInHandler.isBotSpeaking(session));
 
-        // 5 seconds later — well past carrier tail.
-        session.setLastTtsActivityMs(System.currentTimeMillis() - 5000);
+        // Playout finished but within carrier tail (1200ms).
+        session.setEstimatedPlayoutEndMs(System.currentTimeMillis() - 500);
+        assertTrue(BargeInHandler.isBotSpeaking(session));
+
+        // Well past playout + carrier tail.
+        session.setEstimatedPlayoutEndMs(System.currentTimeMillis() - 5000);
         assertFalse(BargeInHandler.isBotSpeaking(session));
     }
 

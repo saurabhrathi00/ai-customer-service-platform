@@ -517,7 +517,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                         if (session.getTtsEpoch().get() != epochAtSubmit) break;
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
-                        if (countAsBotSpeaking) BargeInHandler.noteTtsChunkSent(session);
+                        if (countAsBotSpeaking) BargeInHandler.noteTtsChunkSent(session, n);
                         sendMediaChunk(ws, streamSid, b64, piece);
                         sent += n;
                     }
@@ -574,7 +574,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
                                     log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
                                 }
-                                BargeInHandler.noteTtsChunkSent(session);
+                                BargeInHandler.noteTtsChunkSent(session, chunk.length);
                                 totalBytes[0] += chunk.length;
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });

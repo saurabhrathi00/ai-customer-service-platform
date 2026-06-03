@@ -70,9 +70,9 @@ public class BargeInHandler {
 
         // Gate 1: bot must currently be speaking.
         if (!isBotSpeaking(session)) {
-            log.info("[barge-in] skip callId={} reason=bot-not-speaking ttsInFlight={} lastTtsMs={} age={}ms text=\"{}\"",
-                    session.getCallId(), session.getTtsInFlight().get(), session.getLastTtsActivityMs(),
-                    session.getLastTtsActivityMs() > 0 ? System.currentTimeMillis() - session.getLastTtsActivityMs() : -1,
+            log.info("[barge-in] skip callId={} reason=bot-not-speaking ttsInFlight={} playoutEndMs={} remainMs={}ms text=\"{}\"",
+                    session.getCallId(), session.getTtsInFlight().get(), session.getEstimatedPlayoutEndMs(),
+                    session.getEstimatedPlayoutEndMs() > 0 ? session.getEstimatedPlayoutEndMs() - System.currentTimeMillis() : -1,
                     truncate(text));
             return false;
         }
@@ -137,6 +137,7 @@ public class BargeInHandler {
     // ── ACTION 3 ──────────────────────────────────────────────────────
     private void cancelLocalTts(CallSession session) {
         long bumped = session.getTtsEpoch().incrementAndGet();
+        resetPlayoutTracking(session);
         log.debug("[barge-in] tts epoch bumped callId={} epoch={}",
                 session.getCallId(), bumped);
     }
@@ -149,23 +150,38 @@ public class BargeInHandler {
     private static final long CARRIER_PLAYOUT_TAIL_MS = 1200L;
 
     /** Bot is speaking iff there is a TTS task actively producing audio,
-     *  OR the last outbound chunk reached Twilio within the carrier playout
-     *  tail. A simple boolean flag on the session was tried first but it
-     *  flickered false between successive per-sentence TTS tasks, which let
-     *  interrupts slip through the Gate-1 check. */
+     *  OR the carrier hasn't finished playing the audio we've already sent.
+     *  Chunks are sent in a fast burst but the carrier plays at real-time
+     *  rate — we track the estimated playout end so barge-in stays armed
+     *  for the full duration the caller actually hears bot audio. */
     public static boolean isBotSpeaking(CallSession session) {
         if (session.getTtsInFlight().get() > 0) return true;
-        long last = session.getLastTtsActivityMs();
-        if (last <= 0) return false;
-        return (System.currentTimeMillis() - last) < CARRIER_PLAYOUT_TAIL_MS;
+        long playoutEnd = session.getEstimatedPlayoutEndMs();
+        if (playoutEnd <= 0) return false;
+        return System.currentTimeMillis() < playoutEnd + CARRIER_PLAYOUT_TAIL_MS;
     }
 
-    /** TTS pipeline hook — called when a chunk reaches Twilio so the
-     *  carrier-tail clock is fresh. The in-flight counter is managed
-     *  directly by the TTS task lifecycle (increment on start, decrement
-     *  in finally). */
+    /** TTS pipeline hook — called when a chunk is sent to the carrier.
+     *  Tracks both last-activity (for logging) and estimated playout end
+     *  (for accurate isBotSpeaking). mu-law 8 kHz = 8 bytes per ms. */
+    public static void noteTtsChunkSent(CallSession session, int chunkBytes) {
+        long now = System.currentTimeMillis();
+        session.setLastTtsActivityMs(now);
+        long audioMs = chunkBytes / 8;
+        long currentEnd = session.getEstimatedPlayoutEndMs();
+        long base = Math.max(now, currentEnd);
+        session.setEstimatedPlayoutEndMs(base + audioMs);
+    }
+
+    /** Overload for call sites that don't contribute audio duration
+     *  (e.g. finally-block bookkeeping). Updates lastTtsActivityMs only. */
     public static void noteTtsChunkSent(CallSession session) {
         session.setLastTtsActivityMs(System.currentTimeMillis());
+    }
+
+    /** Reset playout tracking when a barge-in cancels in-flight audio. */
+    public static void resetPlayoutTracking(CallSession session) {
+        session.setEstimatedPlayoutEndMs(0L);
     }
 
     private static String truncate(String s) {

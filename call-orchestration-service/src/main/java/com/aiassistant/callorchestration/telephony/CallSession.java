@@ -112,12 +112,19 @@ public class CallSession {
     @Builder.Default
     private AtomicInteger ttsInFlight = new AtomicInteger(0);
 
-    /** Wall-clock ms of the last outbound TTS chunk reaching Twilio. Used by
+    /** Wall-clock ms of the last outbound TTS chunk reaching the carrier. Used by
      *  the barge-in handler to keep "bot speaking" true during the carrier
      *  playout tail (~1s after we stop synthesising) so the caller's
      *  interrupt during that window still counts as a barge. */
     @Builder.Default
     private volatile long lastTtsActivityMs = 0L;
+
+    /** Estimated wall-clock ms when the carrier will finish playing all audio
+     *  chunks sent so far. Chunks are sent in a fast burst but the carrier
+     *  plays them at real-time rate (8 kHz mu-law = 8 bytes/ms). This lets
+     *  isBotSpeaking() stay true for the full playout duration. */
+    @Builder.Default
+    private volatile long estimatedPlayoutEndMs = 0L;
 
     /** Wall-clock ms when the CURRENT continuous bot-speaking burst started.
      *  Used by the barge-in handler to enforce a grace period at the start
