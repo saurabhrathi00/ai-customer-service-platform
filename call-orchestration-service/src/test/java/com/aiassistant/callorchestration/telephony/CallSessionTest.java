@@ -84,4 +84,28 @@ class CallSessionTest {
         assertEquals(0L, s.getBotSpeakingStartMs());
         assertEquals(0L, s.getLastBargeInMs());
     }
+
+    @Test
+    void recentBotUtterancesDefaultEmpty() {
+        CallSession s = CallSession.builder().build();
+        assertNotNull(s.getRecentBotUtterances());
+        assertTrue(s.getRecentBotUtterances().isEmpty());
+    }
+
+    @Test
+    void recordBotUtteranceAddsEntry() {
+        CallSession s = CallSession.builder().build();
+        s.recordBotUtterance("hello world");
+        assertEquals(1, s.getRecentBotUtterances().size());
+        assertEquals("hello world", s.getRecentBotUtterances().peekFirst().getText());
+    }
+
+    @Test
+    void recordBotUtteranceIgnoresBlank() {
+        CallSession s = CallSession.builder().build();
+        s.recordBotUtterance("");
+        s.recordBotUtterance(null);
+        s.recordBotUtterance("   ");
+        assertTrue(s.getRecentBotUtterances().isEmpty());
+    }
 }

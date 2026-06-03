@@ -512,6 +512,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         @Override
         public void onAiReply(String callId, String text) {
             replyStartedForTurn.set(true);
+            session.recordBotUtterance(text);
             synthesize(callId, text);
         }
 
@@ -519,6 +520,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         public void onAiReplyChunk(String callId, String deltaText) {
             if (deltaText == null || deltaText.isEmpty()) return;
             replyStartedForTurn.set(true);
+            session.recordBotUtterance(deltaText);
             synthesize(callId, deltaText);
         }
 

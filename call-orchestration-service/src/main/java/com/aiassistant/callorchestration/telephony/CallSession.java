@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -149,6 +150,31 @@ public class CallSession {
      *  rapid successive barge-in triggers. */
     @Builder.Default
     private volatile long lastBargeInMs = 0L;
+
+    /** Recent bot utterances for echo detection — STT text that matches
+     *  what the bot recently said is carrier echo, not a real barge-in. */
+    @Builder.Default
+    private ConcurrentLinkedDeque<BotUtterance> recentBotUtterances = new ConcurrentLinkedDeque<>();
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BotUtterance {
+        private String text;
+        private long timestampMs;
+    }
+
+    public void recordBotUtterance(String text) {
+        if (text == null || text.isBlank()) return;
+        recentBotUtterances.addLast(BotUtterance.builder()
+                .text(text).timestampMs(System.currentTimeMillis()).build());
+        long cutoff = System.currentTimeMillis() - 15_000;
+        while (!recentBotUtterances.isEmpty()
+                && recentBotUtterances.peekFirst().getTimestampMs() < cutoff) {
+            recentBotUtterances.pollFirst();
+        }
+    }
 
     @Data
     @Builder

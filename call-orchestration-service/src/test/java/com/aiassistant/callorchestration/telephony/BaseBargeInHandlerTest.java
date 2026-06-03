@@ -109,4 +109,43 @@ class BaseBargeInHandlerTest {
         makeBotSpeaking(5000);
         assertTrue(handler.tryBargeIn(session, "mujhe price batao", config));
     }
+
+    @Test
+    void noBarge_whenEchoOfBotSpeech() {
+        makeBotSpeaking(5000);
+        session.recordBotUtterance("अच्छा, तो building systems के बारे में बताइए।");
+        assertFalse(handler.tryBargeIn(session, "building systems के बारे में बताइए", config));
+    }
+
+    @Test
+    void barges_whenTextDifferentFromBot() {
+        makeBotSpeaking(5000);
+        session.recordBotUtterance("हमारे पास roofing solutions हैं");
+        assertTrue(handler.tryBargeIn(session, "mujhe price batao please", config));
+    }
+
+    @Test
+    void echoDetection_ignoresOldUtterances() {
+        makeBotSpeaking(5000);
+        CallSession.BotUtterance old = CallSession.BotUtterance.builder()
+                .text("building systems ke baare mein").timestampMs(System.currentTimeMillis() - 20_000).build();
+        session.getRecentBotUtterances().addLast(old);
+        assertTrue(handler.tryBargeIn(session, "building systems ke baare mein batao", config));
+    }
+
+    @Test
+    void echoDetection_wordOverlapWorks() {
+        assertTrue(BaseBargeInHandler.isEchoOfBotSpeech(
+                sessionWithBotText("hello how are you doing today"),
+                "how are you doing today"));
+        assertFalse(BaseBargeInHandler.isEchoOfBotSpeech(
+                sessionWithBotText("hello how are you doing today"),
+                "mujhe price batao please"));
+    }
+
+    private CallSession sessionWithBotText(String text) {
+        CallSession s = CallSession.builder().callId("echo-test").build();
+        s.recordBotUtterance(text);
+        return s;
+    }
 }
