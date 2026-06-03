@@ -19,13 +19,20 @@ interface UseLiveDemoReturn {
 
 const TARGET_SAMPLE_RATE = 16000;
 
+const BACKEND_WS_BASE = import.meta.env.VITE_BACKEND_WS_BASE ?? '';
+
 function buildWsUrl(businessId: string, token: string): string {
   const callId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
+  let base: string;
+  if (BACKEND_WS_BASE) {
+    base = BACKEND_WS_BASE;
+  } else {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    base = `${proto}://${window.location.host}`;
+  }
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const host = window.location.host;
-  const basePath = isDev ? '/ws/demo' : '/call-orchestration-service/ws/demo';
-  return `${proto}://${host}${basePath}/call/${callId}?token=${encodeURIComponent(token)}&businessId=${encodeURIComponent(businessId)}`;
+  const contextPath = isDev ? '/ws/demo' : '/call-orchestration-service/ws/demo';
+  return `${base}${contextPath}/call/${callId}?token=${encodeURIComponent(token)}&businessId=${encodeURIComponent(businessId)}`;
 }
 
 export function useLiveDemo(): UseLiveDemoReturn {
