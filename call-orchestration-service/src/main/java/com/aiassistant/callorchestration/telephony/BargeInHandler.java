@@ -69,7 +69,13 @@ public class BargeInHandler {
         if (text == null || text.isBlank()) return false;
 
         // Gate 1: bot must currently be speaking.
-        if (!isBotSpeaking(session)) return false;
+        if (!isBotSpeaking(session)) {
+            log.info("[barge-in] skip callId={} reason=bot-not-speaking ttsInFlight={} lastTtsMs={} age={}ms text=\"{}\"",
+                    session.getCallId(), session.getTtsInFlight().get(), session.getLastTtsActivityMs(),
+                    session.getLastTtsActivityMs() > 0 ? System.currentTimeMillis() - session.getLastTtsActivityMs() : -1,
+                    truncate(text));
+            return false;
+        }
 
         // Gate 1.5: bot must have been speaking for ≥ minBotSpeakingMs.
         // Prevents bot-audio echo (arriving as STT partials in the first
