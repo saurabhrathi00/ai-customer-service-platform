@@ -107,6 +107,15 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
             return;
         }
 
+        Object roles = principal.getAttributes().get("roles");
+        boolean isAdmin = roles instanceof java.util.Collection<?> c
+                && c.stream().anyMatch(r -> "ROLE_BUSINESS_ADMIN".equals(String.valueOf(r)));
+        if (!isAdmin) {
+            sendError(ws, "Demo is only available to business admins");
+            closeQuietly(ws);
+            return;
+        }
+
         UserBusinessServiceClient.DemoTimeResponse demoTime;
         try {
             demoTime = userBusinessServiceClient.getDemoTime(businessId);

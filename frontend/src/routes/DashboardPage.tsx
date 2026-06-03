@@ -29,7 +29,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { LiveDemoModal } from '@/features/demo/LiveDemoModal';
 import { calls, business } from '@/api/resources';
-import { useAuthStore } from '@/store/auth';
+import { useAuthStore, isAdmin } from '@/store/auth';
 import {
   callDuration,
   callRelative,
@@ -70,10 +70,12 @@ export default function DashboardPage() {
         title="Dashboard"
         subtitle="A quick read on your call activity over the past two weeks."
         actions={
-          <Button onClick={() => setDemoOpen(true)} className="gap-2">
-            <Play className="h-4 w-4" />
-            Try Live Demo
-          </Button>
+          isAdmin() ? (
+            <Button onClick={() => setDemoOpen(true)} className="gap-2">
+              <Play className="h-4 w-4" />
+              Try Live Demo
+            </Button>
+          ) : undefined
         }
       />
 
