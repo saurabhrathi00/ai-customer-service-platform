@@ -47,9 +47,14 @@ export default function LeadDetailPage() {
     enabled: Boolean(leadId),
   });
 
-  const invalidate = () => {
+  const onActioned = (newStatus: 'APPROVED' | 'DECLINED' | 'IGNORED') => {
+    qc.setQueryData<import('@/types/api').LeadResponse[]>(
+      ['leads', businessId],
+      (old) => old?.filter((l) => l.id !== leadId),
+    );
     qc.invalidateQueries({ queryKey: ['leads', businessId] });
     qc.invalidateQueries({ queryKey: ['leads', businessId, leadId] });
+    qc.invalidateQueries({ queryKey: ['leads', businessId, 'pending-count'] });
   };
 
   const lead = q.data;
@@ -72,10 +77,10 @@ export default function LeadDetailPage() {
       leads.approve(businessId, leadId!, isAppointment ? toIso(slot) : null),
     onSuccess: () => {
       toast.success(
-        isAppointment ? 'Appointment confirmed. WhatsApp sent.' : 'Lead approved. Customer notified.',
+        isAppointment ? ‘Appointment confirmed. WhatsApp sent.’ : ‘Lead approved. Customer notified.’,
       );
-      invalidate();
-      navigate('/leads');
+      onActioned(‘APPROVED’);
+      navigate(‘/leads’);
     },
     onError: () => {/* axios interceptor toasts the error */},
   });
@@ -83,18 +88,18 @@ export default function LeadDetailPage() {
   const decline = useMutation({
     mutationFn: () => leads.decline(businessId, leadId!, reason.trim()),
     onSuccess: () => {
-      toast.success('Lead declined. Customer notified with your reason.');
-      invalidate();
-      navigate('/leads');
+      toast.success(‘Lead declined. Customer notified with your reason.’);
+      onActioned(‘DECLINED’);
+      navigate(‘/leads’);
     },
   });
 
   const ignore = useMutation({
     mutationFn: () => leads.ignore(businessId, leadId!),
     onSuccess: () => {
-      toast.success('Dismissed. Customer wasn’t notified.');
-      invalidate();
-      navigate('/leads');
+      toast.success(‘Dismissed. Customer wasn’t notified.’);
+      onActioned(‘IGNORED’);
+      navigate(‘/leads’);
     },
   });
 
