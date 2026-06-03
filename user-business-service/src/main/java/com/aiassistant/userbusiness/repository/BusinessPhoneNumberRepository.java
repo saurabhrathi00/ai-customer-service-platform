@@ -14,6 +14,8 @@ public interface BusinessPhoneNumberRepository extends JpaRepository<BusinessPho
 
     Optional<BusinessPhoneNumberEntity> findByPhoneNumber(String phoneNumber);
 
+    Optional<BusinessPhoneNumberEntity> findByPhoneNumberAndIsActiveTrue(String phoneNumber);
+
     Optional<BusinessPhoneNumberEntity> findByIdAndBusinessId(String id, String businessId);
 
     boolean existsByPhoneNumber(String phoneNumber);

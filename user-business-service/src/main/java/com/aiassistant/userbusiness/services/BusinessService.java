@@ -102,7 +102,7 @@ public class BusinessService {
     }
 
     public BusinessLookupResponse lookupByPhoneNumber(String phoneNumber) {
-        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByPhoneNumber(phoneNumber)
+        BusinessPhoneNumberEntity phone = phoneNumberRepository.findByPhoneNumberAndIsActiveTrue(phoneNumber)
                 .orElseThrow(() -> new BusinessNotFoundException(
                         "No business found for phone number: " + phoneNumber));
         BusinessEntity business = loadBusiness(phone.getBusinessId());
