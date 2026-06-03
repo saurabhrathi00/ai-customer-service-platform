@@ -8,38 +8,41 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Temporary per-call audio recorder. Buffers inbound audio in memory
  * and writes a WAV file on flush. Any TelephonyMediaStreamHandler can
- * use this by storing an instance in CallSession.providerAttributes.
- *
- * <p>Usage:
+ * use this via three static calls:
  * <pre>
- *   // on start
- *   session.getProviderAttributes().put("recorder",
- *       new CallRecorder(session.getCallId(), codec, sampleRate));
- *
- *   // on each audio frame
- *   CallRecorder.push(session, audioBytes);
- *
- *   // on disconnect
- *   CallRecorder.flush(session);
+ *   CallRecorder.attach(session, codec, sampleRate);   // on start
+ *   CallRecorder.push(session, audioBytes);             // each frame
+ *   CallRecorder.flush(session);                        // on disconnect
  * </pre>
+ *
+ * Files are saved as: recordings/{provider}/{phone}_{businessId}_{datetime}.wav
  */
 public class CallRecorder {
 
     private static final Logger log = LoggerFactory.getLogger(CallRecorder.class);
     private static final Path RECORDING_DIR = Path.of("/app/logs/recordings");
     private static final String ATTR_KEY = "recorder";
+    private static final DateTimeFormatter FILE_DT_FMT =
+            DateTimeFormatter.ofPattern("dd-MM-yyyy_hh-mm-ss-SSSa");
 
-    private final String callId;
+    private final String provider;
+    private final String customerPhone;
+    private final String businessId;
     private final AudioCodec codec;
     private final int sampleRate;
     private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 
-    public CallRecorder(String callId, AudioCodec codec, int sampleRate) {
-        this.callId = callId;
+    public CallRecorder(String provider, String customerPhone, String businessId,
+                        AudioCodec codec, int sampleRate) {
+        this.provider = provider;
+        this.customerPhone = customerPhone;
+        this.businessId = businessId;
         this.codec = codec;
         this.sampleRate = sampleRate;
     }
@@ -60,14 +63,21 @@ public class CallRecorder {
 
         try {
             byte[] pcm = (codec == AudioCodec.MULAW) ? mulawToPcm16(raw) : raw;
-            Files.createDirectories(RECORDING_DIR);
-            Path wavFile = RECORDING_DIR.resolve(callId + ".wav");
+
+            String phone = sanitize(customerPhone != null ? customerPhone.replaceAll("[^0-9]", "") : "unknown");
+            String bizId = sanitize(businessId != null ? businessId : "unknown");
+            String ts = LocalDateTime.now().format(FILE_DT_FMT);
+            String fileName = phone + "_" + bizId + "_" + ts + ".wav";
+
+            Path dir = RECORDING_DIR.resolve(provider != null ? provider : "unknown");
+            Files.createDirectories(dir);
+            Path wavFile = dir.resolve(fileName);
             writeWav(wavFile, pcm, sampleRate);
+
             double durationSecs = (double) pcm.length / (sampleRate * 2);
-            log.info("[recording] saved {} ({} bytes, {}s) callId={}",
-                    wavFile, pcm.length, String.format("%.1f", durationSecs), callId);
+            log.info("[recording] saved {} ({}s)", wavFile, String.format("%.1f", durationSecs));
         } catch (Exception ex) {
-            log.error("[recording] failed to save callId={}: {}", callId, ex.getMessage());
+            log.error("[recording] failed: {}", ex.getMessage());
         }
     }
 
@@ -75,7 +85,11 @@ public class CallRecorder {
 
     public static void attach(CallSession session, AudioCodec codec, int sampleRate) {
         session.getProviderAttributes().put(ATTR_KEY,
-                new CallRecorder(session.getCallId(), codec, sampleRate));
+                new CallRecorder(
+                        session.getProvider(),
+                        session.getCustomerPhone(),
+                        session.getBusinessId(),
+                        codec, sampleRate));
     }
 
     public static void push(CallSession session, byte[] audio) {
@@ -114,6 +128,10 @@ public class CallRecorder {
             raf.write(intToLE(dataSize));
             raf.write(pcmData);
         }
+    }
+
+    private static String sanitize(String s) {
+        return s.replaceAll("[^a-zA-Z0-9_-]", "");
     }
 
     private static byte[] intToLE(int v) {

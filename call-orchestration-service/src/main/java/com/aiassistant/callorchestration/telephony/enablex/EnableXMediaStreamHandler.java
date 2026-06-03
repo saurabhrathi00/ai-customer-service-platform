@@ -6,6 +6,7 @@ import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
 import com.aiassistant.callorchestration.telephony.BargeInHandler;
+import com.aiassistant.callorchestration.telephony.CallRecorder;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
@@ -181,6 +182,8 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     session.getBusinessId(), session.getCustomerPhone());
         }
 
+        CallRecorder.attach(session, codec, sampleRate);
+
         AiCallEventListener listener = new AiCallEventListener(session);
         session.getProviderAttributes().put("aiCallListener", listener);
         session.setLastCallerActivityMs(System.currentTimeMillis());
@@ -245,6 +248,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         if (stt instanceof SttSession sttSession) {
             sttSession.pushAudio(audioPayload);
         }
+        CallRecorder.push(session, audioPayload);
         AudioCodec codec = (AudioCodec) session.getProviderAttributes()
                 .getOrDefault("codec", AudioCodec.MULAW);
         if (session.getGreetingDone().get() && hasVoice(audioPayload, codec)) {
@@ -279,6 +283,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Override
     public void onDisconnect(CallSession session, String reason) {
         log.info("[enablex] onDisconnect callId={} reason={}", session.getCallId(), reason);
+        CallRecorder.flush(session);
         cancelSilenceWatchdog(session);
         safeEndAiConversation(session.getCallId());
     }

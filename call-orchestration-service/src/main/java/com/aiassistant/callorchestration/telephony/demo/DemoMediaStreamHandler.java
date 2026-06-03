@@ -6,6 +6,7 @@ import com.aiassistant.callorchestration.security.token.JwtTokenProvider;
 import com.aiassistant.callorchestration.security.token.TokenPrincipal;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
+import com.aiassistant.callorchestration.telephony.CallRecorder;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
@@ -137,6 +138,8 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
         session.getProviderAttributes().put("demoSecondsRemaining", demoTime.secondsRemaining());
         session.getProviderAttributes().put("demoStartMs", System.currentTimeMillis());
 
+        CallRecorder.attach(session, DEMO_CODEC, DEMO_SAMPLE_RATE);
+
         sendEvent(ws, "started", Map.of("secondsRemaining", demoTime.secondsRemaining()));
 
         DemoCallEventListener listener = new DemoCallEventListener(session);
@@ -198,6 +201,7 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
                         if (stt instanceof SttSession sttSession) {
                             sttSession.pushAudio(audio);
                         }
+                        CallRecorder.push(session, audio);
                     }
                 }
                 case "stop" -> {
@@ -218,6 +222,7 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private void endDemo(CallSession session, String reason) {
+        CallRecorder.flush(session);
         cancelDemoTimer(session);
         cancelSilenceWatchdog(session);
 
