@@ -230,9 +230,14 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
         if (startMs > 0) {
             int elapsedSecs = (int) ((System.currentTimeMillis() - startMs) / 1000);
             if (elapsedSecs > 0) {
-                userBusinessServiceClient.decrementDemoTime(session.getBusinessId(), elapsedSecs);
-                log.info("[demo] decremented {}s of demo time businessId={}",
-                        elapsedSecs, session.getBusinessId());
+                try {
+                    userBusinessServiceClient.decrementDemoTime(session.getBusinessId(), elapsedSecs);
+                    log.info("[demo] decremented {}s of demo time businessId={}",
+                            elapsedSecs, session.getBusinessId());
+                } catch (Exception ex) {
+                    log.error("[demo] FAILED to decrement demo time businessId={} elapsed={}s: {}",
+                            session.getBusinessId(), elapsedSecs, ex.getMessage());
+                }
             }
         }
 
