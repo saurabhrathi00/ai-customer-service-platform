@@ -36,15 +36,16 @@ public class ServiceTokenClient {
     }
 
     public String getToken(String audience, List<String> scopes) {
-        CachedToken existing = cache.get(audience);
+        String cacheKey = audience + "|" + String.join(",", scopes);
+        CachedToken existing = cache.get(cacheKey);
         if (existing != null && Instant.now().isBefore(existing.expiresAt().minus(REFRESH_BUFFER))) {
             return existing.token();
         }
-        return refresh(audience, scopes);
+        return refresh(cacheKey, audience, scopes);
     }
 
-    private synchronized String refresh(String audience, List<String> scopes) {
-        CachedToken existing = cache.get(audience);
+    private synchronized String refresh(String cacheKey, String audience, List<String> scopes) {
+        CachedToken existing = cache.get(cacheKey);
         if (existing != null && Instant.now().isBefore(existing.expiresAt().minus(REFRESH_BUFFER))) {
             return existing.token();
         }
@@ -68,8 +69,8 @@ public class ServiceTokenClient {
             CachedToken fresh = new CachedToken(
                     response.getToken(),
                     Instant.now().plusSeconds(response.getExpiresIn()));
-            cache.put(audience, fresh);
-            log.info("Service token refreshed for audience={}, expires in {}s", audience, response.getExpiresIn());
+            cache.put(cacheKey, fresh);
+            log.info("Service token refreshed for audience={} scopes={}, expires in {}s", audience, scopes, response.getExpiresIn());
             return fresh.token();
         } catch (RestClientException ex) {
             throw new DownstreamServiceException("Failed to fetch service token from auth-service", ex);
