@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Phone, PhoneOff } from 'lucide-react';
+import { Phone, PhoneOff, Timer } from 'lucide-react';
 import {
   Dialog,
   DialogBody,
@@ -27,9 +27,12 @@ export function LiveDemoModal({ open, onOpenChange, demoSecondsRemaining }: Prop
     }
   }, [transcript]);
 
-  const displaySeconds = status === 'active' ? secondsRemaining : demoSecondsRemaining;
+  const displaySeconds = status === 'active' || status === 'connecting'
+    ? secondsRemaining
+    : demoSecondsRemaining;
   const mins = Math.floor(displaySeconds / 60);
   const secs = displaySeconds % 60;
+  const isLow = displaySeconds <= 30;
 
   const handleClose = () => {
     if (status === 'active' || status === 'connecting') stop();
@@ -41,20 +44,37 @@ export function LiveDemoModal({ open, onOpenChange, demoSecondsRemaining }: Prop
       <DialogHeader>
         <DialogTitle>Live Demo</DialogTitle>
         <DialogDescription>
-          Talk to your AI assistant. {mins}:{secs.toString().padStart(2, '0')} remaining.
+          Talk to your AI assistant to see how it handles customer calls.
         </DialogDescription>
       </DialogHeader>
 
       <DialogBody className="space-y-4">
+        {/* Countdown timer */}
+        <div className={cn(
+          'flex items-center justify-center gap-2 rounded-lg py-3 text-center font-mono',
+          status === 'active'
+            ? isLow
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-primary/10 text-primary'
+            : 'bg-muted text-muted-foreground',
+        )}>
+          <Timer className="h-4 w-4" />
+          <span className="text-2xl font-bold tabular-nums">
+            {mins}:{secs.toString().padStart(2, '0')}
+          </span>
+          <span className="text-xs uppercase tracking-wide">remaining</span>
+        </div>
+
         {error && (
           <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </div>
         )}
 
+        {/* Transcript */}
         <div
           ref={scrollRef}
-          className="h-64 overflow-y-auto rounded-lg border bg-muted/30 p-3 space-y-2"
+          className="h-56 overflow-y-auto rounded-lg border bg-muted/30 p-3 space-y-2"
         >
           {transcript.length === 0 && status !== 'active' && (
             <p className="text-sm text-muted-foreground text-center py-8">
@@ -92,6 +112,7 @@ export function LiveDemoModal({ open, onOpenChange, demoSecondsRemaining }: Prop
           ))}
         </div>
 
+        {/* Controls */}
         <div className="flex items-center justify-center gap-3">
           {status === 'idle' || status === 'ended' ? (
             <Button
