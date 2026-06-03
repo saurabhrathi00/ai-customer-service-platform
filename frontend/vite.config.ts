@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       // Dev-only convenience. Each Spring service serves under its own
       // context path; we route /api/<svc>/... → http://localhost:<port>/<svc>/...
+      '/ws/demo':       { target: 'ws://localhost:8086', changeOrigin: true, ws: true, rewrite: (p) => p.replace(/^\/ws\/demo/, '/call-orchestration-service/ws/demo') },
       '/api/auth':      { target: 'http://localhost:8081', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/auth/, '/auth-service') },
       '/api/business':  { target: 'http://localhost:8082', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/business/, '/user-business-service') },
       '/api/knowledge': { target: 'http://localhost:8083', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/knowledge/, '/knowledge-service') },

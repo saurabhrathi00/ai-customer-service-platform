@@ -31,6 +31,13 @@ public class HttpClientConfig {
                 .build();
     }
 
+    @Bean(name = "userBusinessServiceRestClient")
+    public RestClient userBusinessServiceRestClient() {
+        return RestClient.builder()
+                .baseUrl(serviceConfiguration.getUserBusinessService().getBaseUrl())
+                .build();
+    }
+
     @Bean(name = "knowledgeServiceRestClient")
     public RestClient knowledgeServiceRestClient() {
         return RestClient.builder()

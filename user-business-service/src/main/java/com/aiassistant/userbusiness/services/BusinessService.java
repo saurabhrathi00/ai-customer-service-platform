@@ -1,5 +1,6 @@
 package com.aiassistant.userbusiness.services;
 
+import com.aiassistant.userbusiness.exceptions.AppException;
 import com.aiassistant.userbusiness.exceptions.BusinessNotFoundException;
 import com.aiassistant.userbusiness.exceptions.ConflictException;
 import com.aiassistant.userbusiness.models.dao.BusinessEntity;
@@ -10,6 +11,7 @@ import com.aiassistant.userbusiness.models.request.RegisterBusinessRequest;
 import com.aiassistant.userbusiness.models.request.UpdateBusinessProfileRequest;
 import com.aiassistant.userbusiness.models.response.BusinessLookupResponse;
 import com.aiassistant.userbusiness.models.response.BusinessResponse;
+import com.aiassistant.userbusiness.models.response.DemoTimeResponse;
 import com.aiassistant.userbusiness.models.response.ExistsResponse;
 import com.aiassistant.userbusiness.repository.BusinessPhoneNumberRepository;
 import com.aiassistant.userbusiness.repository.BusinessRepository;
@@ -125,6 +127,37 @@ public class BusinessService {
     public ExistsResponse exists(String businessId) {
         boolean exists = businessRepository.existsById(businessId);
         return ExistsResponse.builder().id(businessId).exists(exists).build();
+    }
+
+    public DemoTimeResponse getDemoTime(String businessId) {
+        BusinessEntity entity = loadBusiness(businessId);
+        return DemoTimeResponse.builder()
+                .businessId(entity.getId())
+                .secondsRemaining(entity.getLiveDemoSecondsRemaining())
+                .build();
+    }
+
+    @Transactional
+    public DemoTimeResponse decrementDemoTime(String businessId, int seconds) {
+        if (seconds <= 0) {
+            throw new AppException("Decrement seconds must be positive");
+        }
+        int updated = businessRepository.decrementDemoTime(businessId, seconds);
+        if (updated == 0) {
+            BusinessEntity entity = businessRepository.findById(businessId).orElse(null);
+            if (entity == null) {
+                throw new BusinessNotFoundException("Business not found: " + businessId);
+            }
+            throw new AppException("Insufficient demo time remaining ("
+                    + entity.getLiveDemoSecondsRemaining() + "s)");
+        }
+        BusinessEntity entity = loadBusiness(businessId);
+        log.info("Demo time decremented businessId={} by={}s remaining={}s",
+                businessId, seconds, entity.getLiveDemoSecondsRemaining());
+        return DemoTimeResponse.builder()
+                .businessId(entity.getId())
+                .secondsRemaining(entity.getLiveDemoSecondsRemaining())
+                .build();
     }
 
     BusinessEntity loadBusiness(String businessId) {

@@ -18,6 +18,7 @@ export interface BusinessResponse {
   operatingHours: string | null;
   /** E.164 WhatsApp number for owner-facing lead notifications. */
   whatsappNumber: string | null;
+  liveDemoSecondsRemaining: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string | null;

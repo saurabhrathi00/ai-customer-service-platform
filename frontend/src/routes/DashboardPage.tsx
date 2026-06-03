@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -8,6 +8,7 @@ import {
   Star,
   Clock,
   ArrowUpRight,
+  Play,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -25,7 +26,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { calls } from '@/api/resources';
+import { Button } from '@/components/ui/Button';
+import { LiveDemoModal } from '@/features/demo/LiveDemoModal';
+import { calls, business } from '@/api/resources';
 import { useAuthStore } from '@/store/auth';
 import {
   callDuration,
@@ -38,6 +41,14 @@ import { formatDuration } from '@/lib/utils';
 
 export default function DashboardPage() {
   const businessId = useAuthStore((s) => s.businessId);
+  const [demoOpen, setDemoOpen] = useState(false);
+
+  const profile = useQuery({
+    queryKey: ['business', 'profile', businessId],
+    queryFn: () => business.profile(businessId!),
+    enabled: Boolean(businessId),
+  });
+
   const recent = useQuery({
     queryKey: ['calls', 'recent', businessId],
     queryFn: () => calls.recent(businessId!),
@@ -51,11 +62,25 @@ export default function DashboardPage() {
     [recent.data, summaryMap],
   );
 
+  const demoSeconds = profile.data?.liveDemoSecondsRemaining ?? 0;
+
   return (
     <>
       <PageHeader
         title="Dashboard"
         subtitle="A quick read on your call activity over the past two weeks."
+        actions={
+          <Button onClick={() => setDemoOpen(true)} className="gap-2">
+            <Play className="h-4 w-4" />
+            Try Live Demo
+          </Button>
+        }
+      />
+
+      <LiveDemoModal
+        open={demoOpen}
+        onOpenChange={setDemoOpen}
+        demoSecondsRemaining={demoSeconds}
       />
       <PageBody className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

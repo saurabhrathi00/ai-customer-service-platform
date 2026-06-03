@@ -54,6 +54,10 @@ public class BusinessEntity {
     @Column(name = "whatsapp_number")
     private String whatsappNumber;
 
+    @Column(name = "live_demo_seconds_remaining", nullable = false)
+    @Builder.Default
+    private Integer liveDemoSecondsRemaining = 300;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 
