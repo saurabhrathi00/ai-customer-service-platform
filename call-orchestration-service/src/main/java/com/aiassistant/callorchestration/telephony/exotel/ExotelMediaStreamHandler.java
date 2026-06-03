@@ -5,6 +5,7 @@ import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
 import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
+import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
@@ -15,6 +16,7 @@ import com.aiassistant.callorchestration.voice.VoiceProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +67,13 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     private final Executor ttsExecutor;
     @Qualifier("silenceWatchdogScheduler")
     private final ScheduledExecutorService silenceWatchdogScheduler;
+
+    private BargeInHandler bargeInHandler;
+
+    @PostConstruct
+    void initBargeIn() {
+        this.bargeInHandler = new ExotelBargeInHandler(objectMapper);
+    }
 
     private static final int    MIN_FORWARD_CHARS = 2;
 
@@ -230,7 +239,14 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                             return;
                         }
 
-                        if (fillerAudioCache.isEnabled()) {
+                        boolean barged = bargeInHandler.tryBargeIn(
+                                session, trimmed, serviceConfiguration.getBargeIn());
+                        if (barged) {
+                            log.info("[exotel] barge-in accepted callId={} text=\"{}\"",
+                                    session.getCallId(), trimmed);
+                        }
+
+                        if (!barged && fillerAudioCache.isEnabled()) {
                             AiCallEventListener l = (AiCallEventListener)
                                     session.getProviderAttributes().get("aiCallListener");
                             if (l != null) l.maybePlayFiller(text);
@@ -468,25 +484,40 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
             synthesize(session.getCallId(), msg);
         }
 
+        private void notePlayoutChunk(int bytesSent) {
+            long chunkMs = bytesSent / AudioCodec.MULAW.bytesPerMs();
+            long currentEnd = session.getEstimatedPlayoutEndMs();
+            long now = System.currentTimeMillis();
+            long newEnd = Math.max(currentEnd, now) + chunkMs;
+            session.setEstimatedPlayoutEndMs(newEnd);
+            if (session.getBotSpeakingStartMs() == 0) {
+                session.setBotSpeakingStartMs(now);
+            }
+        }
+
         private void queueRawAudio(byte[] mulawBytes, String tag, long startDelayMs,
                                    boolean countAsBotSpeaking) {
             String streamSid = (String) session.getProviderAttributes().get("streamSid");
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) return;
+            long myEpoch = session.getTtsEpoch().get();
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                if (session.getTtsEpoch().get() != myEpoch) return;
                 if (!ws.isOpen()) return;
                 if (startDelayMs > 0) {
                     try { Thread.sleep(startDelayMs); }
                     catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
-                    if (!ws.isOpen()) return;
+                    if (!ws.isOpen() || session.getTtsEpoch().get() != myEpoch) return;
                 }
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     int frame = 160;
                     int sent = 0;
                     while (sent < mulawBytes.length) {
+                        if (session.getTtsEpoch().get() != myEpoch) return;
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
+                        notePlayoutChunk(piece.length);
                         sendMediaChunk(ws, streamSid, b64, piece);
                         sent += n;
                     }
@@ -522,8 +553,10 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
             String streamSid = (String) session.getProviderAttributes().get("streamSid");
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) return;
+            long myEpoch = session.getTtsEpoch().get();
 
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                if (session.getTtsEpoch().get() != myEpoch) return;
                 if (!ws.isOpen()) return;
                 int[] totalBytes = {0};
                 try {
@@ -531,15 +564,21 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
+                                if (session.getTtsEpoch().get() != myEpoch) {
+                                    throw new RuntimeException("barge-in: epoch stale");
+                                }
                                 if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
                                     long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
                                     log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
                                 }
                                 totalBytes[0] += chunk.length;
+                                notePlayoutChunk(chunk.length);
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
                 } catch (Exception ex) {
-                    log.warn("[tts] FAIL callId={}: {}", callId, ex.getMessage());
+                    if (!ex.getMessage().contains("barge-in")) {
+                        log.warn("[tts] FAIL callId={}: {}", callId, ex.getMessage());
+                    }
                 } finally {
                     session.setLastTtsActivityMs(System.currentTimeMillis());
                     if (session.getGreetingDone().compareAndSet(false, true)) {
