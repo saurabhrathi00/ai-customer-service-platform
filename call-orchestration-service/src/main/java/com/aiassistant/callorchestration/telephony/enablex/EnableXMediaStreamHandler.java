@@ -5,7 +5,6 @@ import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
 import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
-import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
@@ -54,10 +53,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Qualifier("silenceWatchdogScheduler")
     private final ScheduledExecutorService silenceWatchdogScheduler;
 
-    private static final int    BARGE_MIN_CHARS = 14;
-    private static final double BARGE_CONF_MIN  = 0.5;
-    private static final long   BARGE_MIN_BOT_SPEAKING_MS = 400L;
-    private static final long   BURST_GAP_MS = 600L;
     private static final int    MIN_FORWARD_CHARS = 2;
 
     @Override
@@ -177,11 +172,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     session.getBusinessId(), session.getCustomerPhone());
         }
 
-        BargeInHandler bargeHandler = new BargeInHandler(
-                BARGE_MIN_CHARS, BARGE_CONF_MIN, BARGE_MIN_BOT_SPEAKING_MS,
-                aiConversationWsClient);
-        session.getProviderAttributes().put("bargeInHandler", bargeHandler);
-
         AiCallEventListener listener = new AiCallEventListener(session);
         session.getProviderAttributes().put("aiCallListener", listener);
         session.setLastCallerActivityMs(System.currentTimeMillis());
@@ -210,17 +200,12 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                         session.setLastCallerActivityMs(System.currentTimeMillis());
                         session.setSilenceNudgedAtMs(0L);
 
-                        if (serviceConfiguration.getBarge().isEnabled()) {
-                            bargeHandler.checkAndBarge(session, sttEvent);
-                        }
-
                         if (!sttEvent.isFinal()) return;
 
                         String trimmed = text.trim();
                         if (trimmed.length() < MIN_FORWARD_CHARS) {
                             log.info("[stt] DROP-NOISE callId={} reason=too-short len={} text=\"{}\"",
                                     session.getCallId(), trimmed.length(), text);
-                            bargeHandler.reset();
                             return;
                         }
 
@@ -231,7 +216,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                         }
                         conversationCoordinator.onCustomerUtterance(
                                 session.getCallId(), text, true);
-                        bargeHandler.reset();
                     }
             );
             session.getProviderAttributes().put("sttSession", stt);
@@ -309,7 +293,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         try {
             long now = System.currentTimeMillis();
             long anchor = Math.max(session.getLastTtsActivityMs(), session.getLastCallerActivityMs());
-            if (BargeInHandler.isBotSpeaking(session)) return;
 
             long nudgedAt = session.getSilenceNudgedAtMs();
             if (nudgedAt > 0) {
@@ -409,7 +392,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                 new java.util.concurrent.atomic.AtomicBoolean(true);
         private final java.util.concurrent.atomic.AtomicInteger fillerChainCount =
                 new java.util.concurrent.atomic.AtomicInteger(0);
-        private volatile long fillerChainEpoch = 0L;
 
         public void maybePlayFiller(String sttText) {
             if (!fillerAudioCache.isEnabled()) return;
@@ -424,7 +406,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             lastFillerAtMs = now;
             replyStartedForTurn.set(false);
             fillerChainCount.set(0);
-            fillerChainEpoch = session.getTtsEpoch().get();
             if (isQuestion) {
                 queueChainedFiller(sttText, clip);
             } else {
@@ -444,7 +425,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void chainTick(String sttText) {
             if (replyStartedForTurn.get()) return;
             if (session.getEndingCall().get()) return;
-            if (session.getTtsEpoch().get() != fillerChainEpoch) return;
             if (fillerChainCount.get() >= FILLER_CHAIN_MAX) {
                 playTroubleFallback();
                 return;
@@ -471,31 +451,20 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             String streamSid = (String) session.getProviderAttributes().get("streamSid");
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) return;
-            long epochAtSubmit = session.getTtsEpoch().get();
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
                 if (!ws.isOpen()) return;
-                if (session.getTtsEpoch().get() != epochAtSubmit) return;
                 if (startDelayMs > 0) {
                     try { Thread.sleep(startDelayMs); }
                     catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
-                    if (!ws.isOpen() || session.getTtsEpoch().get() != epochAtSubmit) return;
-                }
-                if (countAsBotSpeaking) {
-                    int prev2 = session.getTtsInFlight().getAndIncrement();
-                    if (prev2 == 0) {
-                        long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
-                        if (sinceLast > BURST_GAP_MS) session.setBotSpeakingStartMs(System.currentTimeMillis());
-                    }
+                    if (!ws.isOpen()) return;
                 }
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     int frame = 160;
                     int sent = 0;
                     while (sent < mulawBytes.length) {
-                        if (session.getTtsEpoch().get() != epochAtSubmit) break;
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
-                        if (countAsBotSpeaking) BargeInHandler.noteTtsChunkSent(session, n);
                         sendMediaChunk(ws, streamSid, b64, piece);
                         sent += n;
                     }
@@ -503,8 +472,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     log.warn("[enablex] {} send failed callId={}: {}", tag, session.getCallId(), ex.getMessage());
                 } finally {
                     if (countAsBotSpeaking) {
-                        session.getTtsInFlight().decrementAndGet();
-                        BargeInHandler.noteTtsChunkSent(session);
+                        session.setLastTtsActivityMs(System.currentTimeMillis());
                     }
                 }
             }, ttsExecutor).exceptionally(ex -> null));
@@ -533,44 +501,30 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) return;
 
-            long epochAtSubmit = session.getTtsEpoch().get();
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
-                if (!ws.isOpen() || session.getTtsEpoch().get() != epochAtSubmit) return;
-                int prevInFlight = session.getTtsInFlight().getAndIncrement();
-                if (prevInFlight == 0) {
-                    long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
-                    if (sinceLast > BURST_GAP_MS) session.setBotSpeakingStartMs(System.currentTimeMillis());
-                }
+                if (!ws.isOpen()) return;
                 int[] totalBytes = {0};
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
-                                if (session.getTtsEpoch().get() != epochAtSubmit) throw new BargeInAbortException();
                                 if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
                                     long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
                                     log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
                                 }
-                                BargeInHandler.noteTtsChunkSent(session, chunk.length);
                                 totalBytes[0] += chunk.length;
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
-                } catch (BargeInAbortException ignored) {
                 } catch (Exception ex) {
-                    log.warn("[tts] FAIL callId={} epoch={}: {}", callId, epochAtSubmit, ex.getMessage());
+                    log.warn("[tts] FAIL callId={}: {}", callId, ex.getMessage());
                 } finally {
-                    session.getTtsInFlight().decrementAndGet();
-                    BargeInHandler.noteTtsChunkSent(session);
+                    session.setLastTtsActivityMs(System.currentTimeMillis());
                     if (session.getGreetingDone().compareAndSet(false, true)) {
                         log.info("[greeting] done — STT now active callId={}", callId);
                     }
                 }
             }, ttsExecutor).exceptionally(ex -> null));
-        }
-
-        private final class BargeInAbortException extends RuntimeException {
-            BargeInAbortException() { super(null, null, false, false); }
         }
 
         private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {

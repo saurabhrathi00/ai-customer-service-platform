@@ -15,8 +15,6 @@ class CallSessionTest {
         assertNotNull(s.getTranscript(), "transcript list");
         assertNotNull(s.getHistory(), "history list");
         assertNotNull(s.getProviderAttributes(), "providerAttributes map");
-        assertNotNull(s.getTtsEpoch(), "ttsEpoch");
-        assertNotNull(s.getTtsInFlight(), "ttsInFlight");
         assertNotNull(s.getFinalized(), "finalized");
         assertNotNull(s.getEnded(), "ended");
         assertNotNull(s.getEndingCall(), "endingCall");
@@ -46,25 +44,6 @@ class CallSessionTest {
         CallSession s = CallSession.builder().build();
         assertFalse(s.getGreetingDone().get(),
                 "STT must be gated off until greeting completes");
-    }
-
-    @Test
-    void ttsInFlightCounterIsZeroInitially() {
-        CallSession s = CallSession.builder().build();
-        assertEquals(0, s.getTtsInFlight().get());
-    }
-
-    @Test
-    void ttsInFlightCounterTransitions() {
-        CallSession s = CallSession.builder().build();
-        // bot speaking starts
-        assertEquals(0, s.getTtsInFlight().getAndIncrement());
-        assertEquals(1, s.getTtsInFlight().get());
-        s.getTtsInFlight().incrementAndGet();
-        assertEquals(2, s.getTtsInFlight().get(), "two chunks in flight");
-        s.getTtsInFlight().decrementAndGet();
-        s.getTtsInFlight().decrementAndGet();
-        assertEquals(0, s.getTtsInFlight().get(), "drained");
     }
 
     @Test

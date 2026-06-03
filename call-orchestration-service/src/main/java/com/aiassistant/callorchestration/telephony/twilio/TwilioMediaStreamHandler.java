@@ -5,7 +5,6 @@ import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
 import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
-import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
@@ -55,26 +54,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
     private final Executor ttsExecutor;
     @Qualifier("silenceWatchdogScheduler")
     private final ScheduledExecutorService silenceWatchdogScheduler;
-
-    /** Barge-in detection knobs. Conservative defaults — tune in
-     *  configs.barge.* if false positives or missed barges appear.
-     *  Interim partials need {@code BARGE_MIN_CHARS} to fire so quick
-     *  "yes" / "haan" / "hmm" acknowledgements don't cut the bot mid
-     *  sentence. Finals always pass length. */
-    private static final int    BARGE_MIN_CHARS = 14;
-    private static final double BARGE_CONF_MIN  = 0.5;
-    /** Bot self-barge protection. The first few hundred ms of any bot
-     *  utterance is immune to barge-in so an echo of the bot's own opening
-     *  syllable can't self-cut the reply. Kept short (400ms) so real
-     *  callers who start talking immediately don't get suppressed —
-     *  Twilio's {@code track=inbound_track} already filters most of the
-     *  outbound audio at the carrier. */
-    private static final long   BARGE_MIN_BOT_SPEAKING_MS = 400L;
-    /** Inter-sentence silence beyond which we treat the next chunk as a NEW
-     *  bot-speaking burst (and reset the grace clock). Below this, back-to-back
-     *  sentences share the original burst's start time so the caller can still
-     *  interrupt sentence #2 of a multi-sentence reply. */
-    private static final long   BURST_GAP_MS = 600L;
 
     /** Drop STT finals shorter than this. Threshold is intentionally tiny
      *  (2 chars) — anything 1 char is almost always noise / mis-recognition,
@@ -178,14 +157,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     if (cp.hasNonNull("customerPhone")) session.setCustomerPhone(cp.path("customerPhone").asText());
 
 
-                    // Per-call barge-in handler — owns the per-utterance
-                    // idempotency flag and fans cancellation out to Twilio,
-                    // ai-conv and local TTS in one place.
-                    BargeInHandler bargeHandler = new BargeInHandler(
-                            BARGE_MIN_CHARS, BARGE_CONF_MIN, BARGE_MIN_BOT_SPEAKING_MS,
-                            aiConversationWsClient);
-                    session.getProviderAttributes().put("bargeInHandler", bargeHandler);
-
                     // Open AI conversation WS — sends INIT with business knowledge,
                     // streams MESSAGE/RESPONSE for this call.
                     AiCallEventListener listener = new AiCallEventListener(session);
@@ -230,10 +201,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     session.setLastCallerActivityMs(System.currentTimeMillis());
                                     session.setSilenceNudgedAtMs(0L);
 
-                                    if (serviceConfiguration.getBarge().isEnabled()) {
-                                        bargeHandler.checkAndBarge(session, event2);
-                                    }
-
                                     if (!event2.isFinal()) return;
 
                                     // Noise filter — only drop transcripts that
@@ -248,7 +215,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     if (trimmed.length() < MIN_FORWARD_CHARS) {
                                         log.info("[stt] DROP-NOISE callId={} reason=too-short len={} text=\"{}\"",
                                                 session.getCallId(), trimmed.length(), text);
-                                        bargeHandler.reset();
                                         return;
                                     }
 
@@ -264,10 +230,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     }
                                     conversationCoordinator.onCustomerUtterance(
                                             session.getCallId(), text, /*clear=*/ true);
-                                    // The final has been forwarded — re-arm the
-                                    // barge-in handler so the next utterance is
-                                    // eligible to interrupt the upcoming reply.
-                                    bargeHandler.reset();
                                 }
                         );
                         session.getProviderAttributes().put("sttSession", stt);
@@ -436,9 +398,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             long anchor = Math.max(lastBot, lastCaller);
             long silenceMs = now - anchor;
 
-            // If bot is currently speaking or within carrier tail, no nudge.
-            if (BargeInHandler.isBotSpeaking(session)) return;
-
             long nudgedAt = session.getSilenceNudgedAtMs();
             if (nudgedAt > 0) {
                 // We already nudged. If still silent past hangup window, end call.
@@ -522,9 +481,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         /** Number of fillers queued so far for the in-flight user turn. */
         private final java.util.concurrent.atomic.AtomicInteger fillerChainCount =
                 new java.util.concurrent.atomic.AtomicInteger(0);
-        /** Epoch snapshot when the current filler chain started. If barge-in
-         *  bumps the epoch, chainTick sees the mismatch and stops chaining. */
-        private volatile long fillerChainEpoch = 0L;
 
         /**
          * Play a cached "thinking" clip in the caller's language IF:
@@ -565,15 +521,14 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             // chaining "Got it... Noted... Understood..." would feel awful.
             replyStartedForTurn.set(false);
             fillerChainCount.set(0);
-            fillerChainEpoch = session.getTtsEpoch().get();
             if (isQuestion) {
                 queueChainedFiller(sttText, clip);
             } else {
                 long delay = fillerAudioCache.getStartDelayMs();
-                log.debug("[filler] ack queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
-                        session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
+                log.debug("[filler] ack queueing callId={} bytes={} startDelayMs={} lang={}",
+                        session.getCallId(), clip.length, delay,
                         FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
-                queueRawAudio(clip, "ack", delay, /*countAsBotSpeaking=*/true);
+                queueRawAudio(clip, "ack", delay);
             }
         }
 
@@ -585,10 +540,10 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void queueChainedFiller(String sttText, byte[] clip) {
             int idx = fillerChainCount.incrementAndGet();
             long delay = (idx == 1) ? fillerAudioCache.getStartDelayMs() : FILLER_CHAIN_GAP_MS;
-            log.debug("[filler] chain={} queueing callId={} bytes={} epoch={} startDelayMs={} lang={}",
-                    idx, session.getCallId(), clip.length, session.getTtsEpoch().get(), delay,
+            log.debug("[filler] chain={} queueing callId={} bytes={} startDelayMs={} lang={}",
+                    idx, session.getCallId(), clip.length, delay,
                     FillerAudioCache.looksHindi(sttText) ? "hi" : "en");
-            queueRawAudio(clip, "filler-" + idx, delay, /*countAsBotSpeaking=*/true);
+            queueRawAudio(clip, "filler-" + idx, delay);
 
             // mu-law @ 8kHz = 8 bytes per ms. Schedule the next-check a touch
             // after this clip finishes so the chain doesn't overlap itself.
@@ -602,7 +557,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void chainTick(String sttText) {
             if (replyStartedForTurn.get()) return;          // reply arrived — chain done
             if (session.getEndingCall().get()) return;      // call winding down — drop
-            if (session.getTtsEpoch().get() != fillerChainEpoch) return; // barged — stop chain
             if (fillerChainCount.get() >= FILLER_CHAIN_MAX) {
                 log.warn("[filler-chain] exhausted callId={} after {} fillers — firing fallback",
                         session.getCallId(), FILLER_CHAIN_MAX);
@@ -635,22 +589,16 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
             synthesize(session.getCallId(), msg);
         }
 
-        /** Queue pre-encoded mu-law bytes onto the serial TTS chain so they
-         *  ride the same epoch + counter + ordering machinery as live TTS.
-         *  {@code startDelayMs} is honoured AFTER the task is dequeued and
-         *  BEFORE the bot-speaking counter is bumped, so a natural pause
-         *  separates the caller finishing their sentence from the filler
-         *  starting. The epoch is re-checked after the delay — if the user
-         *  barged in during that window, the filler is dropped. */
-        private void queueRawAudio(byte[] mulawBytes, String tag, long startDelayMs,
-                                   boolean countAsBotSpeaking) {
+        /** Queue pre-encoded mu-law bytes onto the serial TTS chain.
+         *  {@code startDelayMs} is honoured AFTER the task is dequeued so
+         *  a natural pause separates the caller finishing their sentence
+         *  from the filler starting. */
+        private void queueRawAudio(byte[] mulawBytes, String tag, long startDelayMs) {
             String streamSid = (String) session.getProviderAttributes().get("streamSid");
             WebSocketSession ws = (WebSocketSession) session.getProviderAttributes().get("ws");
             if (streamSid == null || ws == null || !ws.isOpen()) return;
-            long epochAtSubmit = session.getTtsEpoch().get();
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
                 if (!ws.isOpen()) return;
-                if (session.getTtsEpoch().get() != epochAtSubmit) return;
 
                 if (startDelayMs > 0) {
                     try { Thread.sleep(startDelayMs); }
@@ -659,44 +607,24 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                         return;
                     }
                     if (!ws.isOpen()) return;
-                    if (session.getTtsEpoch().get() != epochAtSubmit) {
-                        log.info("[tts] SKIP {} callId={} epoch={} reason=epoch-bumped-during-delay (now={})",
-                                tag, session.getCallId(), epochAtSubmit, session.getTtsEpoch().get());
-                        return;
-                    }
                 }
 
-                if (countAsBotSpeaking) {
-                    int prevInFlight = session.getTtsInFlight().getAndIncrement();
-                    if (prevInFlight == 0) {
-                        long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
-                        if (sinceLast > BURST_GAP_MS) {
-                            session.setBotSpeakingStartMs(System.currentTimeMillis());
-                        }
-                    }
-                }
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     int frame = 160; // 20 ms mu-law @ 8 kHz
                     int sent = 0;
                     while (sent < mulawBytes.length) {
-                        if (session.getTtsEpoch().get() != epochAtSubmit) break;
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
-                        if (countAsBotSpeaking) BargeInHandler.noteTtsChunkSent(session, n);
                         sendMediaChunk(ws, streamSid, b64, piece);
                         sent += n;
                     }
-                    log.info("[tts] played {} bytes={}/{} epoch={} aborted={}",
-                            tag, sent, mulawBytes.length, epochAtSubmit, sent < mulawBytes.length);
+                    log.info("[tts] played {} bytes={}/{}", tag, sent, mulawBytes.length);
                 } catch (Exception ex) {
                     log.warn("[twilio] {} send failed callId={}: {}",
                             tag, session.getCallId(), ex.getMessage());
                 } finally {
-                    if (countAsBotSpeaking) {
-                        session.getTtsInFlight().decrementAndGet();
-                        BargeInHandler.noteTtsChunkSent(session);
-                    }
+                    session.setLastTtsActivityMs(System.currentTimeMillis());
                 }
             }, ttsExecutor).exceptionally(ex -> null));
         }
@@ -730,61 +658,37 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                 return;
             }
 
-            long epochAtSubmit = session.getTtsEpoch().get();
-            log.debug("[tts] QUEUE callId={} epoch={} chars={} text=\"{}\"",
-                    callId, epochAtSubmit, text.length(),
+            log.debug("[tts] QUEUE callId={} chars={} text=\"{}\"",
+                    callId, text.length(),
                     text.length() > 80 ? text.substring(0, 80) + "…" : text);
 
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
                 if (!ws.isOpen()) {
-                    log.debug("[tts] SKIP callId={} epoch={} reason=ws-closed", callId, epochAtSubmit);
+                    log.debug("[tts] SKIP callId={} reason=ws-closed", callId);
                     return;
-                }
-                if (session.getTtsEpoch().get() != epochAtSubmit) {
-                    log.debug("[tts] SKIP callId={} epoch={} reason=epoch-bumped-pre (now={})",
-                            callId, epochAtSubmit, session.getTtsEpoch().get());
-                    return;
-                }
-                int prevInFlight = session.getTtsInFlight().getAndIncrement();
-                if (prevInFlight == 0) {
-                    // Bot just transitioned silent → speaking. If it's been
-                    // silent for more than BURST_GAP_MS, this is a NEW burst
-                    // (e.g. fresh reply turn) — reset the grace clock.
-                    long sinceLast = System.currentTimeMillis() - session.getLastTtsActivityMs();
-                    if (sinceLast > BURST_GAP_MS) {
-                        session.setBotSpeakingStartMs(System.currentTimeMillis());
-                    }
                 }
                 long start = System.currentTimeMillis();
                 int[] totalBytes = {0};
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
-                    log.debug("[tts] START callId={} epoch={} (calling ElevenLabs)", callId, epochAtSubmit);
+                    log.debug("[tts] START callId={} (calling ElevenLabs)", callId);
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
-                                if (session.getTtsEpoch().get() != epochAtSubmit) {
-                                    throw new BargeInAbortException();
-                                }
                                 if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
                                     long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
                                     log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
                                 }
-                                BargeInHandler.noteTtsChunkSent(session, chunk.length);
                                 totalBytes[0] += chunk.length;
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
-                    log.debug("[tts] DONE  callId={} epoch={} bytes={} totalMs={}",
-                            callId, epochAtSubmit, totalBytes[0], System.currentTimeMillis() - start);
-                } catch (BargeInAbortException bx) {
-                    log.debug("[tts] ABORT callId={} epoch={} bytes={} reason=barge-in",
-                            callId, epochAtSubmit, totalBytes[0]);
+                    log.debug("[tts] DONE  callId={} bytes={} totalMs={}",
+                            callId, totalBytes[0], System.currentTimeMillis() - start);
                 } catch (Exception ex) {
-                    log.warn("[tts] FAIL  callId={} epoch={} bytes={} reason={}",
-                            callId, epochAtSubmit, totalBytes[0], ex.getMessage());
+                    log.warn("[tts] FAIL  callId={} bytes={} reason={}",
+                            callId, totalBytes[0], ex.getMessage());
                 } finally {
-                    session.getTtsInFlight().decrementAndGet();
-                    BargeInHandler.noteTtsChunkSent(session);
+                    session.setLastTtsActivityMs(System.currentTimeMillis());
                     // First real TTS task to complete = greeting done. STT
                     // consumer can now start forwarding events.
                     if (session.getGreetingDone().compareAndSet(false, true)) {
@@ -792,13 +696,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     }
                 }
             }, ttsExecutor).exceptionally(ex -> null));
-        }
-
-        /** Sentinel to unwind the TTS streaming callback when the caller has
-         *  started talking mid-reply. Caught by {@link #synthesize}; never
-         *  escapes to the executor. */
-        private final class BargeInAbortException extends RuntimeException {
-            BargeInAbortException() { super(null, null, false, false); }
         }
 
         private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {
