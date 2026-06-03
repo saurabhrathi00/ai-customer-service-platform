@@ -44,6 +44,14 @@ public class ServiceConfiguration {
         /** If bot has less than this many ms of audio left, let it finish
          *  rather than cutting off the tail end. */
         private long remainingAudioThresholdMs = 600;
+        /** Max ms of audio allowed in the carrier buffer. Audio is drip-fed
+         *  so the buffer never exceeds this — on barge-in, at most this much
+         *  audio plays before the bot stops. 0 = no pacing (send as fast as
+         *  TTS produces). */
+        private long maxBufferMs = 1000;
+        /** How often (ms) to drip the next chunk of audio into the carrier
+         *  buffer. Should be less than maxBufferMs to prevent gaps. */
+        private long dripIntervalMs = 500;
     }
 
     @Data

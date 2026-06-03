@@ -480,13 +480,15 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     Base64.Encoder b64 = Base64.getEncoder();
                     int frame = 160;
                     int sent = 0;
+                    long pacingStart = System.currentTimeMillis();
                     while (sent < mulawBytes.length) {
                         if (session.getTtsEpoch().get() != myEpoch) return;
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
+                        sent += n;
+                        paceForCarrierBuffer(pacingStart, sent);
                         notePlayoutChunk(piece.length);
                         sendMediaChunk(ws, streamSid, b64, piece);
-                        sent += n;
                     }
                 } catch (Exception ex) {
                     log.warn("[enablex] {} send failed callId={}: {}", tag, session.getCallId(), ex.getMessage());
@@ -496,6 +498,22 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                     }
                 }
             }, ttsExecutor).exceptionally(ex -> null));
+        }
+
+        private void paceForCarrierBuffer(long sendStartMs, long totalBytesSent) {
+            ServiceConfiguration.BargeIn cfg = serviceConfiguration.getBargeIn();
+            long maxBuf = cfg.getMaxBufferMs();
+            if (maxBuf <= 0) return;
+            long audioSentMs = totalBytesSent / AudioCodec.MULAW.bytesPerMs();
+            long elapsedMs = System.currentTimeMillis() - sendStartMs;
+            long bufferMs = audioSentMs - elapsedMs;
+            if (bufferMs >= maxBuf) {
+                try {
+                    Thread.sleep(cfg.getDripIntervalMs());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
 
         private void notePlayoutChunk(int bytesSent) {
@@ -539,6 +557,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                 if (session.getTtsEpoch().get() != myEpoch) return;
                 if (!ws.isOpen()) return;
                 int[] totalBytes = {0};
+                long[] pacingStart = {0};
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     textToSpeechProvider.synthesizeStream(text,
@@ -547,11 +566,15 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
                                 if (session.getTtsEpoch().get() != myEpoch) {
                                     throw new RuntimeException("barge-in: epoch stale");
                                 }
-                                if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
-                                    long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
-                                    log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                if (totalBytes[0] == 0) {
+                                    pacingStart[0] = System.currentTimeMillis();
+                                    if (session.getTurnStartMs() > 0) {
+                                        long sinceTurn = pacingStart[0] - session.getTurnStartMs();
+                                        log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                    }
                                 }
                                 totalBytes[0] += chunk.length;
+                                paceForCarrierBuffer(pacingStart[0], totalBytes[0]);
                                 notePlayoutChunk(chunk.length);
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
