@@ -21,9 +21,11 @@ const TARGET_SAMPLE_RATE = 16000;
 
 function buildWsUrl(businessId: string, token: string): string {
   const callId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const host = window.location.host;
-  return `${proto}://${host}/ws/demo/call/${callId}?token=${encodeURIComponent(token)}&businessId=${encodeURIComponent(businessId)}`;
+  const basePath = isDev ? '/ws/demo' : '/call-orchestration-service/ws/demo';
+  return `${proto}://${host}${basePath}/call/${callId}?token=${encodeURIComponent(token)}&businessId=${encodeURIComponent(businessId)}`;
 }
 
 export function useLiveDemo(): UseLiveDemoReturn {
