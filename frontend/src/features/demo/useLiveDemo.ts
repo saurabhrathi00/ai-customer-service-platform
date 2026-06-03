@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MicVAD } from '@ricky0123/vad-web';
 import { useAuthStore } from '@/store/auth';
 
 export type DemoStatus = 'idle' | 'connecting' | 'active' | 'ended';
@@ -68,16 +69,16 @@ export function useLiveDemo(): UseLiveDemoReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const workletRef = useRef<AudioWorkletNode | null>(null);
-  const playbackQueueRef = useRef<Float32Array[]>([]);
-  const isPlayingRef = useRef(false);
+  const vadRef = useRef<MicVAD | null>(null);
+  const isSpeakingRef = useRef(false);
   const nextPlayTimeRef = useRef(0);
 
   const cleanup = useCallback(() => {
-    if (workletRef.current) {
-      workletRef.current.disconnect();
-      workletRef.current = null;
+    if (vadRef.current) {
+      vadRef.current.destroy();
+      vadRef.current = null;
     }
+    isSpeakingRef.current = false;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -93,8 +94,6 @@ export function useLiveDemo(): UseLiveDemoReturn {
       audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
     }
-    playbackQueueRef.current = [];
-    isPlayingRef.current = false;
     nextPlayTimeRef.current = 0;
   }, []);
 
@@ -147,49 +146,45 @@ export function useLiveDemo(): UseLiveDemoReturn {
 
       ws.onopen = async () => {
         try {
-          const source = audioCtx.createMediaStreamSource(stream);
+          const vad = await MicVAD.new({
+            baseAssetPath: '/vad/',
+            onnxWASMBasePath: '/vad/',
+            model: 'legacy',
+            startOnLoad: true,
+            getStream: async () => stream,
+            pauseStream: async () => {},
+            resumeStream: async () => stream,
+            positiveSpeechThreshold: 0.6,
+            negativeSpeechThreshold: 0.4,
+            minSpeechFrames: 3,
+            redemptionFrames: 8,
+            onSpeechStart: () => {
+              isSpeakingRef.current = true;
+            },
+            onSpeechEnd: () => {
+              isSpeakingRef.current = false;
+            },
+            onFrameProcessed: (_probs, frame) => {
+              if (!isSpeakingRef.current) return;
+              if (ws.readyState !== WebSocket.OPEN) return;
 
-          await audioCtx.audioWorklet.addModule(
-            URL.createObjectURL(
-              new Blob(
-                [
-                  `class PcmSender extends AudioWorkletProcessor {
-                    process(inputs) {
-                      const input = inputs[0];
-                      if (input && input[0] && input[0].length > 0) {
-                        this.port.postMessage(input[0]);
-                      }
-                      return true;
-                    }
-                  }
-                  registerProcessor('pcm-sender', PcmSender);`,
-                ],
-                { type: 'application/javascript' },
-              ),
-            ),
-          );
+              const int16 = new Int16Array(frame.length);
+              for (let i = 0; i < frame.length; i++) {
+                const s = Math.max(-1, Math.min(1, frame[i]));
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+              }
+              const b64 = uint8ToBase64(new Uint8Array(int16.buffer));
+              ws.send(JSON.stringify({ event: 'media', media: { payload: b64 } }));
+            },
+            onVADMisfire: () => {
+              isSpeakingRef.current = false;
+            },
+          });
 
-          const worklet = new AudioWorkletNode(audioCtx, 'pcm-sender');
-          workletRef.current = worklet;
-
-          worklet.port.onmessage = (ev: MessageEvent<Float32Array>) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            const float32 = ev.data;
-            const int16 = new Int16Array(float32.length);
-            for (let i = 0; i < float32.length; i++) {
-              const s = Math.max(-1, Math.min(1, float32[i]));
-              int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-            }
-            const b64 = uint8ToBase64(new Uint8Array(int16.buffer));
-            ws.send(JSON.stringify({ event: 'media', media: { payload: b64 } }));
-          };
-
-          source.connect(worklet);
-          worklet.connect(audioCtx.destination);
+          vadRef.current = vad;
         } catch (err) {
-          setError('Failed to start audio capture');
-          setStatus('ended');
-          cleanup();
+          console.error('[vad] init failed, falling back to raw capture', err);
+          setupRawCapture(audioCtx, stream, ws);
         }
       };
 
@@ -271,6 +266,44 @@ export function useLiveDemo(): UseLiveDemoReturn {
   }, [cleanup]);
 
   return { status, secondsRemaining, transcript, error, start, stop };
+}
+
+function setupRawCapture(audioCtx: AudioContext, stream: MediaStream, ws: WebSocket) {
+  const source = audioCtx.createMediaStreamSource(stream);
+  audioCtx.audioWorklet.addModule(
+    URL.createObjectURL(
+      new Blob(
+        [
+          `class PcmSender extends AudioWorkletProcessor {
+            process(inputs) {
+              const input = inputs[0];
+              if (input && input[0] && input[0].length > 0) {
+                this.port.postMessage(input[0]);
+              }
+              return true;
+            }
+          }
+          registerProcessor('pcm-sender', PcmSender);`,
+        ],
+        { type: 'application/javascript' },
+      ),
+    ),
+  ).then(() => {
+    const worklet = new AudioWorkletNode(audioCtx, 'pcm-sender');
+    worklet.port.onmessage = (ev: MessageEvent<Float32Array>) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const float32 = ev.data;
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      const b64 = uint8ToBase64(new Uint8Array(int16.buffer));
+      ws.send(JSON.stringify({ event: 'media', media: { payload: b64 } }));
+    };
+    source.connect(worklet);
+    worklet.connect(audioCtx.destination);
+  });
 }
 
 function uint8ToBase64(bytes: Uint8Array): string {
