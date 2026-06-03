@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Data
 @Builder
@@ -126,6 +127,28 @@ public class CallSession {
      *  compute per-stage latency across the STT→LLM→TTS pipeline. */
     @Builder.Default
     private volatile long turnStartMs = 0L;
+
+    /** Monotonically increasing counter bumped on every barge-in. TTS tasks
+     *  snapshot this at start and bail when it changes — no stale audio sent. */
+    @Builder.Default
+    private AtomicLong ttsEpoch = new AtomicLong(0);
+
+    /** Estimated wall-clock ms when the carrier finishes playing the audio
+     *  we've sent so far. Updated on every outbound chunk. Bot is "speaking"
+     *  whenever {@code System.currentTimeMillis() < estimatedPlayoutEndMs}. */
+    @Builder.Default
+    private volatile long estimatedPlayoutEndMs = 0L;
+
+    /** Wall-clock ms when the first TTS chunk of the current turn was sent.
+     *  Used for the barge-in grace period — don't interrupt the bot in the
+     *  first few hundred ms of speaking. Reset to 0 on barge-in or playout end. */
+    @Builder.Default
+    private volatile long botSpeakingStartMs = 0L;
+
+    /** Wall-clock ms of the last barge-in event. Used for debouncing
+     *  rapid successive barge-in triggers. */
+    @Builder.Default
+    private volatile long lastBargeInMs = 0L;
 
     @Data
     @Builder

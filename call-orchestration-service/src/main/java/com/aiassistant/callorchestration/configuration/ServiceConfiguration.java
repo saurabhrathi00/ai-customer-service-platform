@@ -22,11 +22,28 @@ public class ServiceConfiguration {
     private Deepgram deepgram;
     private Filler filler = new Filler();
     private Silence silence = new Silence();
+    private BargeIn bargeIn = new BargeIn();
     private EnableXApi enablexApi;
 
     @Data
     public static class EnableXApi {
         private String baseUrl;
+    }
+
+    @Data
+    public static class BargeIn {
+        private boolean enabled = true;
+        /** Minimum characters in the STT transcript to trigger barge-in.
+         *  Filters out noise / tiny partial artifacts. */
+        private int minTextLength = 4;
+        /** Minimum ms between successive barge-in triggers for the same call. */
+        private long debounceMs = 300;
+        /** Don't barge if bot started speaking less than this many ms ago.
+         *  Lets the caller hear at least the opening of the response. */
+        private long gracePeriodMs = 500;
+        /** If bot has less than this many ms of audio left, let it finish
+         *  rather than cutting off the tail end. */
+        private long remainingAudioThresholdMs = 600;
     }
 
     @Data

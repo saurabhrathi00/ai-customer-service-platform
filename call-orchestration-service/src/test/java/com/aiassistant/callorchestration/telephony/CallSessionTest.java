@@ -54,4 +54,34 @@ class CallSessionTest {
         s.getPendingUtterance().setLength(0);
         assertEquals(0, s.getPendingUtterance().length());
     }
+
+    @Test
+    void ttsEpochStartsAtZero() {
+        CallSession s = CallSession.builder().build();
+        assertNotNull(s.getTtsEpoch(), "ttsEpoch");
+        assertEquals(0L, s.getTtsEpoch().get());
+    }
+
+    @Test
+    void ttsEpochIncrements() {
+        CallSession s = CallSession.builder().build();
+        assertEquals(1L, s.getTtsEpoch().incrementAndGet());
+        assertEquals(2L, s.getTtsEpoch().incrementAndGet());
+    }
+
+    @Test
+    void playoutEstimateDefaultsToZero() {
+        CallSession s = CallSession.builder().build();
+        assertEquals(0L, s.getEstimatedPlayoutEndMs(),
+                "no audio sent → bot not speaking");
+        assertFalse(System.currentTimeMillis() < s.getEstimatedPlayoutEndMs(),
+                "isBotSpeaking should be false with default");
+    }
+
+    @Test
+    void bargeInFieldsDefaultToZero() {
+        CallSession s = CallSession.builder().build();
+        assertEquals(0L, s.getBotSpeakingStartMs());
+        assertEquals(0L, s.getLastBargeInMs());
+    }
 }
