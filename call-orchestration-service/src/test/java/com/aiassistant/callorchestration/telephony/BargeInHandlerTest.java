@@ -2,7 +2,7 @@ package com.aiassistant.callorchestration.telephony;
 
 import com.aiassistant.callorchestration.clients.ws.AiConversationWsClient;
 import com.aiassistant.callorchestration.transcription.TranscriptEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -24,7 +24,7 @@ class BargeInHandlerTest {
     @BeforeEach
     void setUp() {
         aiWs = Mockito.mock(AiConversationWsClient.class);
-        handler = new BargeInHandler(MIN_CHARS, MIN_CONF, MIN_BOT_MS, new ObjectMapper(), aiWs);
+        handler = new BargeInHandler(MIN_CHARS, MIN_CONF, MIN_BOT_MS, aiWs);
         session = CallSession.builder()
                 .callId("CA-test")
                 .conversationId("conv-1")
