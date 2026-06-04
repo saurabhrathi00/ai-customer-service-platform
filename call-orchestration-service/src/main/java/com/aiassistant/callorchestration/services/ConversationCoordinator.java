@@ -417,14 +417,13 @@ public class ConversationCoordinator {
                         callId, replyToMessageId, session.getActiveMessageId(), text);
                 return;
             }
-            String clean = stripConfidenceTag(text);
             log.debug("[ai-resp] RESPONSE callId={} replyTo={} text=\"{}\"",
-                    callId, replyToMessageId, clean);
+                    callId, replyToMessageId, text);
             if (session != null) {
                 session.getTranscript().add(CallSession.TranscriptEntry.builder()
-                        .speaker("assistant").text(clean).timestamp(Instant.now()).build());
+                        .speaker("assistant").text(text).timestamp(Instant.now()).build());
             }
-            dispatch(l -> l.onAiReply(callId, clean));
+            dispatch(l -> l.onAiReply(callId, text));
         }
 
         @Override
@@ -436,16 +435,14 @@ public class ConversationCoordinator {
                         callId, replyToMessageId, session.getActiveMessageId(), deltaText);
                 return;
             }
-            String clean = stripConfidenceTag(deltaText);
-            if (clean.isEmpty()) return;
             log.debug("[ai-resp] DELTA callId={} replyTo={} text=\"{}\"",
-                    callId, replyToMessageId, clean);
+                    callId, replyToMessageId, deltaText);
             if (session != null && streamingAcc.isEmpty()) {
                 long sinceTurn = session.getTurnStartMs() > 0 ? System.currentTimeMillis() - session.getTurnStartMs() : -1;
                 log.info("[latency] LLM-FIRST callId={} sttToFirstToken={}ms", callId, sinceTurn);
             }
-            streamingAcc.append(clean);
-            dispatch(l -> l.onAiReplyChunk(callId, clean));
+            streamingAcc.append(deltaText);
+            dispatch(l -> l.onAiReplyChunk(callId, deltaText));
         }
 
         /** A reply is stale when its {@code replyToMessageId} doesn't match the
@@ -456,11 +453,6 @@ public class ConversationCoordinator {
             if (replyToMessageId == null) return false;
             String active = session.getActiveMessageId();
             return active != null && !active.equals(replyToMessageId);
-        }
-
-        private static String stripConfidenceTag(String text) {
-            if (text == null) return "";
-            return text.replace("[LOW_CONFIDENCE]", "").trim();
         }
 
         @Override
