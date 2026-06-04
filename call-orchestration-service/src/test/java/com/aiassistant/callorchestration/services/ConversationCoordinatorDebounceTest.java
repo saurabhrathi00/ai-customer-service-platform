@@ -2,6 +2,7 @@ package com.aiassistant.callorchestration.services;
 
 import com.aiassistant.callorchestration.clients.KnowledgeServiceClient;
 import com.aiassistant.callorchestration.clients.ws.AiConversationWsClient;
+import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.CallSessionRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -52,8 +53,9 @@ class ConversationCoordinatorDebounceTest {
         postCall = Mockito.mock(PostCallOrchestrator.class);
         scheduler = Executors.newScheduledThreadPool(2);
 
+        ServiceConfiguration serviceConfig = Mockito.mock(ServiceConfiguration.class);
         coordinator = new ConversationCoordinator(
-                wsClient, knowledgeClient, registry, postCall, scheduler);
+                wsClient, knowledgeClient, registry, postCall, serviceConfig, scheduler);
 
         session = CallSession.builder()
                 .callId("CA-test")

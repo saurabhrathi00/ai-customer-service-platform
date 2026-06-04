@@ -229,7 +229,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                                         if (l != null) l.maybePlayFiller(text);
                                     }
                                     conversationCoordinator.onCustomerUtterance(
-                                            session.getCallId(), text, /*clear=*/ true);
+                                            session.getCallId(), text, /*clear=*/ true, event2.confidence());
                                 }
                         );
                         session.getProviderAttributes().put("sttSession", stt);

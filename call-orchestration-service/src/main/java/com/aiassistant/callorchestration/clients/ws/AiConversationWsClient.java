@@ -104,11 +104,16 @@ public class AiConversationWsClient {
 
     /** Send the customer's utterance as a MESSAGE frame. */
     public void sendUserMessage(String conversationId, String messageId, String text) {
+        sendUserMessage(conversationId, messageId, text, false);
+    }
+
+    public void sendUserMessage(String conversationId, String messageId, String text, boolean lowConfidence) {
         ObjectNode body = mapper.createObjectNode();
         body.put("type", WsMessageType.MESSAGE.name());
         body.put("conversationId", conversationId);
         if (messageId != null) body.put("messageId", messageId);
         body.put("text", text == null ? "" : text);
+        if (lowConfidence) body.put("lowConfidence", true);
         sendJson(conversationId, body);
     }
 

@@ -179,7 +179,7 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
                         if (trimmed.length() < MIN_FORWARD_CHARS) return;
 
                         conversationCoordinator.onCustomerUtterance(
-                                session.getCallId(), text, true);
+                                session.getCallId(), text, true, sttEvent.confidence());
                     });
             session.getProviderAttributes().put("sttSession", stt);
         } catch (Exception ex) {

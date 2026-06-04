@@ -261,7 +261,13 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        processTurn(ws, session, frame.getMessageId(), frame.getText());
+        String text = frame.getText();
+        if (frame.isLowConfidence()) {
+            text = "[LOW_CONFIDENCE] " + text;
+            log.info("[ws] low-confidence message conversationId={} text=\"{}\"",
+                    conversationId, text);
+        }
+        processTurn(ws, session, frame.getMessageId(), text);
     }
 
     private void replayPending(WebSocketSession ws, ConversationSession session) {

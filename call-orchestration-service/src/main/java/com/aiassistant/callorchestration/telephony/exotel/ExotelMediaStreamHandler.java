@@ -255,7 +255,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                             if (l != null) l.maybePlayFiller(text);
                         }
                         conversationCoordinator.onCustomerUtterance(
-                                session.getCallId(), text, true);
+                                session.getCallId(), text, true, sttEvent.confidence());
                     }
             );
             session.getProviderAttributes().put("sttSession", stt);

@@ -3,6 +3,7 @@ package com.aiassistant.callorchestration.services;
 import com.aiassistant.callorchestration.clients.KnowledgeServiceClient;
 import com.aiassistant.callorchestration.clients.ws.AiConversationCallbacks;
 import com.aiassistant.callorchestration.clients.ws.AiConversationWsClient;
+import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.CallSessionRegistry;
 import de.huxhorn.sulky.ulid.ULID;
@@ -41,8 +42,15 @@ public class ConversationCoordinator {
     private final KnowledgeServiceClient knowledgeServiceClient;
     private final CallSessionRegistry callSessionRegistry;
     private final PostCallOrchestrator postCallOrchestrator;
+    private final ServiceConfiguration serviceConfiguration;
     @org.springframework.beans.factory.annotation.Qualifier("silenceWatchdogScheduler")
     private final java.util.concurrent.ScheduledExecutorService scheduler;
+
+    private double highConfidenceThreshold() {
+        ServiceConfiguration.Stt stt = serviceConfiguration.getStt();
+        return stt != null && stt.getHighConfidenceThreshold() != null
+                ? stt.getHighConfidenceThreshold() : 0.9;
+    }
 
     /** Debounce window for STT finals. After receiving a FINAL we wait this
      *  many ms; if another FINAL arrives we append and reset the timer.
@@ -185,6 +193,10 @@ public class ConversationCoordinator {
      *               so ai-conv can short-circuit to a "please repeat" reply.
      */
     public void onCustomerUtterance(String callId, String text, boolean clear) {
+        onCustomerUtterance(callId, text, clear, null);
+    }
+
+    public void onCustomerUtterance(String callId, String text, boolean clear, Double confidence) {
         if (text == null || text.isBlank()) {
             log.debug("[stt] empty final dropped callId={} clear={}", callId, clear);
             return;
@@ -194,17 +206,11 @@ public class ConversationCoordinator {
             log.warn("No CallSession for utterance callId={}", callId);
             return;
         }
-        // HANGUP has already fired — the farewell is playing and the call
-        // is about to drop. Drop any STT finals that arrive in this window
-        // so we don't queue another LLM turn / another farewell.
         if (session.getEndingCall().get()) {
             log.debug("[stt] dropped — call ending callId={} text=\"{}\"", callId, text);
             return;
         }
 
-        // Unclear (low-confidence) finals bypass the debounce — they get
-        // their own canned "please repeat" reply via ai-conv and shouldn't
-        // be merged with prior text.
         if (!clear) {
             String messageId = ULID_GEN.nextULID();
             session.getTranscript().add(CallSession.TranscriptEntry.builder()
@@ -214,6 +220,13 @@ public class ConversationCoordinator {
             log.debug("[ai-req] callId={} msgId={} UNCLEAR_MESSAGE sent to ai-conv", callId, messageId);
             wsClient.sendUnclearMessage(session.getConversationId(), messageId);
             return;
+        }
+
+        boolean lowConfidence = confidence != null && confidence < highConfidenceThreshold();
+        if (lowConfidence) {
+            session.getProviderAttributes().put("pendingLowConfidence", true);
+            log.info("[stt] LOW-CONFIDENCE callId={} conf={} text=\"{}\"", callId,
+                    String.format("%.2f", confidence), text);
         }
 
         session.setTurnStartMs(System.currentTimeMillis());
@@ -252,16 +265,20 @@ public class ConversationCoordinator {
                     session.getCallId(), full);
             return;
         }
+        boolean lowConf = Boolean.TRUE.equals(
+                session.getProviderAttributes().remove("pendingLowConfidence"));
+
         String messageId = ULID_GEN.nextULID();
         session.getTranscript().add(CallSession.TranscriptEntry.builder()
                 .speaker("customer").text(full).timestamp(Instant.now()).build());
         session.setActiveMessageId(messageId);
-        log.debug("[conv] callId={} CUSTOMER → \"{}\"", session.getCallId(), full);
+        log.debug("[conv] callId={} CUSTOMER{} → \"{}\"", session.getCallId(),
+                lowConf ? " (low-confidence)" : "", full);
         long sinceSTT = session.getTurnStartMs() > 0 ? System.currentTimeMillis() - session.getTurnStartMs() : -1;
-        log.info("[latency] LLM-SENT callId={} msgId={} sttToLlm={}ms",
-                session.getCallId(), messageId, sinceSTT);
+        log.info("[latency] LLM-SENT callId={} msgId={} sttToLlm={}ms lowConf={}",
+                session.getCallId(), messageId, sinceSTT, lowConf);
         sendUserMessageWithReadinessWait(session.getConversationId(), messageId, full,
-                session.getCallId());
+                session.getCallId(), lowConf);
     }
 
     /** Greeting fires before the AI WS open completes, so a user who
@@ -269,12 +286,12 @@ public class ConversationCoordinator {
      *  Poll briefly (every 100 ms, up to 5 s) and then give up. The 5 s
      *  ceiling matches the slow-path budget without blocking forever. */
     private void sendUserMessageWithReadinessWait(String conversationId, String messageId,
-                                                  String text, String callId) {
+                                                  String text, String callId, boolean lowConfidence) {
         long deadline = System.currentTimeMillis() + 5_000L;
         while (System.currentTimeMillis() < deadline) {
             if (wsClient.isOpen(conversationId)) {
                 try {
-                    wsClient.sendUserMessage(conversationId, messageId, text);
+                    wsClient.sendUserMessage(conversationId, messageId, text, lowConfidence);
                     return;
                 } catch (Exception ex) {
                     log.warn("sendUserMessage failed callId={}: {}", callId, ex.getMessage());

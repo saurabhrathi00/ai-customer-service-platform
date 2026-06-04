@@ -19,5 +19,6 @@ public class InboundFrame {
     private String text;
     private String messageId;
     private String provider;
+    private boolean lowConfidence;
     private Map<String, Object> metadata;
 }
