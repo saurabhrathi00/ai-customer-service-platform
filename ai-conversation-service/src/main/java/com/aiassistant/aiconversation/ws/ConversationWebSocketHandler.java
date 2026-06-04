@@ -263,9 +263,9 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
 
         String text = frame.getText();
         if (frame.isLowConfidence()) {
-            text = "[LOW_CONFIDENCE] " + text;
             log.info("[ws] low-confidence message conversationId={} text=\"{}\"",
                     conversationId, text);
+            text = "(Note: audio was unclear, transcription may be inaccurate) " + text;
         }
         processTurn(ws, session, frame.getMessageId(), text);
     }
