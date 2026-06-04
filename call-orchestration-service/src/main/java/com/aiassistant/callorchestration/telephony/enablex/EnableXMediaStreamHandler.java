@@ -250,8 +250,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private void onAudioFrame(CallSession session, byte[] audioPayload) {
-        CallRecorder.push(session, audioPayload);
-
         byte[] sttAudio = audioPayload;
         Object dn = session.getProviderAttributes().get("rnnoise");
         if (dn instanceof RNNoiseProcessor denoiser) {
@@ -259,6 +257,8 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             if (cleaned.length > 0) sttAudio = cleaned;
             else return;
         }
+
+        CallRecorder.push(session, sttAudio);
 
         Object stt = session.getProviderAttributes().get("sttSession");
         if (stt instanceof SttSession sttSession) {
