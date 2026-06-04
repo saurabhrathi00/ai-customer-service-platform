@@ -1,3 +1,15 @@
+# ---------- Build RNNoise native library ----------
+FROM ubuntu:22.04 AS rnnoise-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git autoconf automake libtool gcc make ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/xiph/rnnoise.git /rnnoise \
+    && cd /rnnoise \
+    && ./autogen.sh \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install
+
 # ---------- Build stage ----------
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 
@@ -20,6 +32,9 @@ LABEL service="call-orchestration-service"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=rnnoise-build /usr/local/lib/librnnoise.so* /usr/local/lib/
+RUN ldconfig
 
 RUN groupadd appgroup && useradd -m -g appgroup appuser
 

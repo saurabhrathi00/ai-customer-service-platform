@@ -9,6 +9,7 @@ import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallRecorder;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
+import com.aiassistant.callorchestration.telephony.audio.RNNoiseProcessor;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
 import com.aiassistant.callorchestration.transcription.SttSession;
 import com.aiassistant.callorchestration.voice.FillerAudioCache;
@@ -184,6 +185,11 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
 
         CallRecorder.attach(session, codec, sampleRate);
 
+        if (RNNoiseProcessor.isAvailable()) {
+            session.getProviderAttributes().put("rnnoise", new RNNoiseProcessor());
+            log.info("[enablex] RNNoise denoiser attached callId={}", session.getCallId());
+        }
+
         AiCallEventListener listener = new AiCallEventListener(session);
         session.getProviderAttributes().put("aiCallListener", listener);
         session.setLastCallerActivityMs(System.currentTimeMillis());
@@ -243,16 +249,20 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         }
     }
 
-    private static final int STT_ENERGY_THRESHOLD = 400;
-
     private void onAudioFrame(CallSession session, byte[] audioPayload) {
         CallRecorder.push(session, audioPayload);
 
-        boolean voiced = rmsEnergy(audioPayload) >= STT_ENERGY_THRESHOLD;
+        byte[] sttAudio = audioPayload;
+        Object dn = session.getProviderAttributes().get("rnnoise");
+        if (dn instanceof RNNoiseProcessor denoiser) {
+            byte[] cleaned = denoiser.process(audioPayload);
+            if (cleaned.length > 0) sttAudio = cleaned;
+            else return;
+        }
 
         Object stt = session.getProviderAttributes().get("sttSession");
-        if (voiced && stt instanceof SttSession sttSession) {
-            sttSession.pushAudio(audioPayload);
+        if (stt instanceof SttSession sttSession) {
+            sttSession.pushAudio(sttAudio);
         }
 
         AudioCodec codec = (AudioCodec) session.getProviderAttributes()
@@ -261,16 +271,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
             session.setLastCallerActivityMs(System.currentTimeMillis());
             session.setSilenceNudgedAtMs(0L);
         }
-    }
-
-    private static double rmsEnergy(byte[] mulaw) {
-        if (mulaw == null || mulaw.length == 0) return 0;
-        long sumSq = 0;
-        for (byte b : mulaw) {
-            short sample = MULAW_DECODE[b & 0xFF];
-            sumSq += (long) sample * sample;
-        }
-        return Math.sqrt((double) sumSq / mulaw.length);
     }
 
     private static final int VAD_MIN_VOICE_BYTES = 30;
@@ -299,6 +299,8 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Override
     public void onDisconnect(CallSession session, String reason) {
         log.info("[enablex] onDisconnect callId={} reason={}", session.getCallId(), reason);
+        Object dn = session.getProviderAttributes().remove("rnnoise");
+        if (dn instanceof RNNoiseProcessor denoiser) denoiser.close();
         CallRecorder.flush(session);
         cancelSilenceWatchdog(session);
         safeEndAiConversation(session.getCallId());
