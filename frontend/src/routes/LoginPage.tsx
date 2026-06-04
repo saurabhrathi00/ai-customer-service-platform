@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowRight } from 'lucide-react';
@@ -23,6 +23,8 @@ type Values = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string })?.from ?? '/';
   const setTokens = useAuthStore((s) => s.setTokens);
   const [showPwd, setShowPwd] = React.useState(false);
   const form = useForm<Values>({
@@ -38,7 +40,7 @@ export default function LoginPage() {
       setError(null);
       setTokens(data.token, data.refreshToken);
       toast.success('Welcome back');
-      navigate('/', { replace: true });
+      navigate(from, { replace: true });
     },
     onError: (err: any) => {
       const msg =

@@ -101,24 +101,27 @@ public class NotificationDispatcher {
                         to,
                         config.getWhatsapp().getCustomerApptConfirmedTemplate(),
                         List.of(
-                                nullSafe(lead.getBusinessName(), "the business"),
+                                nullSafe(lead.getCustomerName(), "there"),
                                 lead.getConfirmedDatetime() == null
                                         ? "the requested time"
-                                        : SLOT_FORMAT.format(lead.getConfirmedDatetime())),
+                                        : SLOT_FORMAT.format(lead.getConfirmedDatetime()),
+                                nullSafe(lead.getBusinessName(), "the business")),
                         null);
             } else if ("APPROVED".equals(status)) {
                 whatsApp.sendTemplate(
                         to,
                         config.getWhatsapp().getCustomerAgentWillConnectTemplate(),
-                        List.of(nullSafe(lead.getBusinessName(), "the business")),
+                        List.of(
+                                nullSafe(lead.getCustomerName(), "there"),
+                                nullSafe(lead.getBusinessName(), "the business")),
                         null);
             } else if ("DECLINED".equals(status)) {
                 whatsApp.sendTemplate(
                         to,
                         config.getWhatsapp().getCustomerApptDeclinedTemplate(),
                         List.of(
-                                nullSafe(lead.getBusinessName(), "the business"),
-                                nullSafe(lead.getDeclineReason(), "scheduling conflict")),
+                                nullSafe(lead.getCustomerName(), "there"),
+                                nullSafe(lead.getBusinessName(), "the business")),
                         null);
             } else {
                 // Should not happen — repo query already filters to APPROVED / DECLINED.

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { isAuthenticated } from '@/store/auth';
 import { AppLayout } from '@/components/app/AppLayout';
@@ -18,7 +18,8 @@ const SettingsPage = lazy(() => import('./SettingsPage'));
 const NotFoundPage = lazy(() => import('./NotFoundPage'));
 
 function Protected() {
-  if (!isAuthenticated()) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!isAuthenticated()) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   return <Outlet />;
 }
 
