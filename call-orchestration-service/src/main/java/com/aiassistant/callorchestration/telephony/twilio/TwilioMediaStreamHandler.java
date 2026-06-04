@@ -6,6 +6,7 @@ import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
 import com.aiassistant.callorchestration.telephony.CallSession;
+import com.aiassistant.callorchestration.telephony.SttCallbackHandler;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
 import com.aiassistant.callorchestration.transcription.SttSession;
@@ -55,11 +56,6 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Qualifier("silenceWatchdogScheduler")
     private final ScheduledExecutorService silenceWatchdogScheduler;
 
-    /** Drop STT finals shorter than this. Threshold is intentionally tiny
-     *  (2 chars) — anything 1 char is almost always noise / mis-recognition,
-     *  but "Ok", "no", "हाँ" etc. are legitimate short replies that must
-     *  pass through. */
-    private static final int    MIN_FORWARD_CHARS = 2;
 
     @Override
     public String providerId() {
@@ -176,62 +172,13 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     // Open the STT streaming session — customer audio → text → coordinator.
                     try {
                         int sampleRate = fmt.path("sampleRate").asInt(8000);
+                        SttCallbackHandler sttCallback = SttCallbackHandler.builder()
+                                .session(session)
+                                .conversationCoordinator(conversationCoordinator)
+                                .fillerAudioCache(fillerAudioCache)
+                                .build();
                         SttSession stt = speechToTextProvider.openSession(
-                                session.getCallId(),
-                                AudioCodec.MULAW,
-                                sampleRate,
-                                event2 -> {
-                                    String text = event2.text();
-                                    if (text == null || text.isBlank()) return;
-
-                                    // Drop every STT event until the greeting
-                                    // has finished playing. The caller hasn't
-                                    // even heard the prompt yet, so anything
-                                    // STT picks up here is either noise or the
-                                    // start of speech that will be re-spoken
-                                    // once the bot stops — better to ignore.
-                                    if (!session.getGreetingDone().get()) {
-                                        log.debug("[stt] dropped during greeting callId={} text=\"{}\"",
-                                                session.getCallId(), text);
-                                        return;
-                                    }
-
-                                    // Any transcript activity (partial or final)
-                                    // resets the silence watchdog — caller is alive.
-                                    session.setLastCallerActivityMs(System.currentTimeMillis());
-                                    session.setSilenceNudgedAtMs(0L);
-
-                                    if (!event2.isFinal()) return;
-
-                                    // Noise filter — only drop transcripts that
-                                    // are clearly garbage. We previously had a
-                                    // confidence floor too, but it filtered
-                                    // out legitimate short replies ("Ok",
-                                    // "Hello") that Deepgram tagged at 0.5–0.65
-                                    // confidence — leaving the caller wondering
-                                    // why the bot ignored them. Trust Deepgram
-                                    // on confidence; only veto 1-char snippets.
-                                    String trimmed = text.trim();
-                                    if (trimmed.length() < MIN_FORWARD_CHARS) {
-                                        log.info("[stt] DROP-NOISE callId={} reason=too-short len={} text=\"{}\"",
-                                                session.getCallId(), trimmed.length(), text);
-                                        return;
-                                    }
-
-                                    // Play a "thinking" filler immediately so
-                                    // the caller hears something during the
-                                    // LLM+TTS round-trip. Queued on the same
-                                    // ttsTail chain — the real reply lands
-                                    // right after the filler finishes.
-                                    if (fillerAudioCache.isEnabled()) {
-                                        AiCallEventListener l = (AiCallEventListener)
-                                                session.getProviderAttributes().get("aiCallListener");
-                                        if (l != null) l.maybePlayFiller(text);
-                                    }
-                                    conversationCoordinator.onCustomerUtterance(
-                                            session.getCallId(), text, /*clear=*/ true, event2.confidence());
-                                }
-                        );
+                                session.getCallId(), AudioCodec.MULAW, sampleRate, sttCallback);
                         session.getProviderAttributes().put("sttSession", stt);
                     } catch (Exception ex) {
                         log.error("[twilio] failed to open STT session callId={}", session.getCallId(), ex);
@@ -450,7 +397,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
      * provider attributes (streamSid, codec) without a registry lookup.
      */
     @RequiredArgsConstructor
-    private final class AiCallEventListener implements ConversationCoordinator.CallEventListener {
+    private final class AiCallEventListener implements ConversationCoordinator.CallEventListener, SttCallbackHandler.FillerCapable {
 
         private final CallSession session;
         /** Per-call serial queue. Each TTS task chains off the previous one

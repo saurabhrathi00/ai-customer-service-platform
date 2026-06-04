@@ -8,6 +8,7 @@ import com.aiassistant.callorchestration.telephony.AudioCodec;
 import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallRecorder;
 import com.aiassistant.callorchestration.telephony.CallSession;
+import com.aiassistant.callorchestration.telephony.SttCallbackHandler;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
 import com.aiassistant.callorchestration.transcription.SttSession;
@@ -63,7 +64,6 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         this.bargeInHandler = new EnableXBargeInHandler(objectMapper);
     }
 
-    private static final int    MIN_FORWARD_CHARS = 2;
 
     @Override
     public String providerId() {
@@ -197,46 +197,15 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         }
 
         try {
+            SttCallbackHandler sttCallback = SttCallbackHandler.builder()
+                    .session(session)
+                    .conversationCoordinator(conversationCoordinator)
+                    .bargeInHandler(bargeInHandler)
+                    .serviceConfiguration(serviceConfiguration)
+                    .fillerAudioCache(fillerAudioCache)
+                    .build();
             SttSession stt = speechToTextProvider.openSession(
-                    session.getCallId(), codec, sampleRate,
-                    sttEvent -> {
-                        String text = sttEvent.text();
-                        if (text == null || text.isBlank()) return;
-
-                        if (!session.getGreetingDone().get()) {
-                            log.debug("[stt] dropped during greeting callId={} text=\"{}\"",
-                                    session.getCallId(), text);
-                            return;
-                        }
-
-                        session.setLastCallerActivityMs(System.currentTimeMillis());
-                        session.setSilenceNudgedAtMs(0L);
-
-                        if (!sttEvent.isFinal()) return;
-
-                        String trimmed = text.trim();
-                        if (trimmed.length() < MIN_FORWARD_CHARS) {
-                            log.info("[stt] DROP-NOISE callId={} reason=too-short len={} text=\"{}\"",
-                                    session.getCallId(), trimmed.length(), text);
-                            return;
-                        }
-
-                        boolean barged = bargeInHandler.tryBargeIn(
-                                session, trimmed, serviceConfiguration.getBargeIn());
-                        if (barged) {
-                            log.info("[enablex] barge-in accepted callId={} text=\"{}\"",
-                                    session.getCallId(), trimmed);
-                        }
-
-                        if (!barged && fillerAudioCache.isEnabled()) {
-                            AiCallEventListener l = (AiCallEventListener)
-                                    session.getProviderAttributes().get("aiCallListener");
-                            if (l != null) l.maybePlayFiller(text);
-                        }
-                        conversationCoordinator.onCustomerUtterance(
-                                session.getCallId(), text, true, sttEvent.confidence());
-                    }
-            );
+                    session.getCallId(), codec, sampleRate, sttCallback);
             session.getProviderAttributes().put("sttSession", stt);
         } catch (Exception ex) {
             log.error("[enablex] failed to open STT session callId={}", session.getCallId(), ex);
@@ -400,7 +369,7 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
     // ─── AI Call Event Listener ───────────────────────────────────────
 
     @RequiredArgsConstructor
-    private final class AiCallEventListener implements ConversationCoordinator.CallEventListener {
+    private final class AiCallEventListener implements ConversationCoordinator.CallEventListener, SttCallbackHandler.FillerCapable {
 
         private final CallSession session;
         private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>> ttsTail

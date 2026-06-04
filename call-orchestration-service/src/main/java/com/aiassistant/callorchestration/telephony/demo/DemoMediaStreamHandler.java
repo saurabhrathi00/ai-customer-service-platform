@@ -8,6 +8,7 @@ import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
 import com.aiassistant.callorchestration.telephony.CallRecorder;
 import com.aiassistant.callorchestration.telephony.CallSession;
+import com.aiassistant.callorchestration.telephony.SttCallbackHandler;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
 import com.aiassistant.callorchestration.transcription.SpeechToTextProvider;
 import com.aiassistant.callorchestration.transcription.SttSession;
@@ -38,7 +39,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
 
     private static final Logger log = LoggerFactory.getLogger(DemoMediaStreamHandler.class);
-    private static final int MIN_FORWARD_CHARS = 2;
     private static final AudioCodec DEMO_CODEC = AudioCodec.PCM16;
     private static final int DEMO_SAMPLE_RATE = 16000;
 
@@ -159,28 +159,14 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
         }
 
         try {
+            SttCallbackHandler sttCallback = SttCallbackHandler.builder()
+                    .session(session)
+                    .conversationCoordinator(conversationCoordinator)
+                    .extraCallback(evt -> sendEvent(ws, "transcript",
+                            Map.of("text", evt.text(), "isFinal", evt.isFinal())))
+                    .build();
             SttSession stt = speechToTextProvider.openSession(
-                    session.getCallId(), DEMO_CODEC, DEMO_SAMPLE_RATE,
-                    sttEvent -> {
-                        String text = sttEvent.text();
-                        if (text == null || text.isBlank()) return;
-
-                        if (!session.getGreetingDone().get()) return;
-
-                        session.setLastCallerActivityMs(System.currentTimeMillis());
-                        session.setSilenceNudgedAtMs(0L);
-
-                        sendEvent(ws, "transcript",
-                                Map.of("text", text, "isFinal", sttEvent.isFinal()));
-
-                        if (!sttEvent.isFinal()) return;
-
-                        String trimmed = text.trim();
-                        if (trimmed.length() < MIN_FORWARD_CHARS) return;
-
-                        conversationCoordinator.onCustomerUtterance(
-                                session.getCallId(), text, true, sttEvent.confidence());
-                    });
+                    session.getCallId(), DEMO_CODEC, DEMO_SAMPLE_RATE, sttCallback);
             session.getProviderAttributes().put("sttSession", stt);
         } catch (Exception ex) {
             log.error("[demo] failed to open STT session callId={}", session.getCallId(), ex);
