@@ -18,8 +18,7 @@ import java.util.List;
 public class UserBusinessLeadClient {
 
     private static final String AUDIENCE = "user-business-service";
-    private static final List<String> READ_SCOPES = List.of("leads.internal.read");
-    private static final List<String> WRITE_SCOPES = List.of("leads.internal.write");
+    private static final List<String> SCOPES = List.of("leads.internal.read", "leads.internal.write");
     private static final ParameterizedTypeReference<List<LeadDto>> LIST_OF_LEADS =
             new ParameterizedTypeReference<>() {};
 
@@ -62,7 +61,7 @@ public class UserBusinessLeadClient {
             List<LeadDto> out = restClient.get()
                     .uri(path)
                     .header(HttpHeaders.AUTHORIZATION,
-                            "Bearer " + serviceTokenClient.getToken(AUDIENCE, READ_SCOPES))
+                            "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .retrieve()
                     .body(LIST_OF_LEADS);
             return out == null ? Collections.emptyList() : out;
@@ -76,7 +75,7 @@ public class UserBusinessLeadClient {
             restClient.post()
                     .uri(path)
                     .header(HttpHeaders.AUTHORIZATION,
-                            "Bearer " + serviceTokenClient.getToken(AUDIENCE, WRITE_SCOPES))
+                            "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException ex) {

@@ -16,8 +16,7 @@ import java.util.List;
 public class UserBusinessServiceClient {
 
     private static final String AUDIENCE = "user-business-service";
-    private static final List<String> READ_SCOPES = List.of("business.internal.read");
-    private static final List<String> WRITE_SCOPES = List.of("business.internal.write");
+    private static final List<String> SCOPES = List.of("business.internal.read", "business.internal.write");
 
     private static final Logger log = LoggerFactory.getLogger(UserBusinessServiceClient.class);
 
@@ -34,7 +33,7 @@ public class UserBusinessServiceClient {
         try {
             return restClient.get()
                     .uri("/api/internal/business/{id}/demo-time", businessId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, READ_SCOPES))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .retrieve()
                     .body(DemoTimeResponse.class);
         } catch (RestClientException ex) {
@@ -46,7 +45,7 @@ public class UserBusinessServiceClient {
         try {
             return restClient.post()
                     .uri("/api/internal/business/{id}/demo-time/decrement?seconds={seconds}", businessId, seconds)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, WRITE_SCOPES))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceTokenClient.getToken(AUDIENCE, SCOPES))
                     .retrieve()
                     .body(DemoTimeResponse.class);
         } catch (RestClientException ex) {
