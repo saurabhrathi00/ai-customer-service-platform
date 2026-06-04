@@ -148,8 +148,8 @@ public class BusinessService {
             if (entity == null) {
                 throw new BusinessNotFoundException("Business not found: " + businessId);
             }
-            throw new AppException("Insufficient demo time remaining ("
-                    + entity.getLiveDemoSecondsRemaining() + "s)");
+            log.info("Demo time already exhausted businessId={} remaining={}s",
+                    businessId, entity.getLiveDemoSecondsRemaining());
         }
         BusinessEntity entity = loadBusiness(businessId);
         log.info("Demo time decremented businessId={} by={}s remaining={}s",

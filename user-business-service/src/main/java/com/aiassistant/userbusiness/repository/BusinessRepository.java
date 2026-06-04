@@ -23,6 +23,6 @@ public interface BusinessRepository extends JpaRepository<BusinessEntity, String
     Optional<BusinessEntity> findByIdForUpdate(@Param("id") String id);
 
     @Modifying
-    @Query("UPDATE BusinessEntity b SET b.liveDemoSecondsRemaining = b.liveDemoSecondsRemaining - :seconds, b.updatedAt = CURRENT_TIMESTAMP WHERE b.id = :id AND b.liveDemoSecondsRemaining >= :seconds")
+    @Query("UPDATE BusinessEntity b SET b.liveDemoSecondsRemaining = GREATEST(0, b.liveDemoSecondsRemaining - :seconds), b.updatedAt = CURRENT_TIMESTAMP WHERE b.id = :id AND b.liveDemoSecondsRemaining > 0")
     int decrementDemoTime(@Param("id") String id, @Param("seconds") int seconds);
 }

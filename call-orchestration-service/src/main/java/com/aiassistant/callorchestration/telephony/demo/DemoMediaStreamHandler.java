@@ -219,12 +219,19 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
 
         long startMs = session.getProviderAttributes().get("demoStartMs") instanceof Long l ? l : 0L;
         if (startMs > 0) {
-            int elapsedSecs = (int) ((System.currentTimeMillis() - startMs) / 1000);
+            int remaining = session.getProviderAttributes().get("demoSecondsRemaining") instanceof Integer r ? r : 0;
+            int elapsedSecs = Math.min((int) ((System.currentTimeMillis() - startMs) / 1000), remaining);
             if (elapsedSecs > 0) {
                 try {
-                    userBusinessServiceClient.decrementDemoTime(session.getBusinessId(), elapsedSecs);
-                    log.info("[demo] decremented {}s of demo time businessId={}",
-                            elapsedSecs, session.getBusinessId());
+                    UserBusinessServiceClient.DemoTimeResponse resp =
+                            userBusinessServiceClient.decrementDemoTime(session.getBusinessId(), elapsedSecs);
+                    if (resp != null) {
+                        log.info("[demo] decremented {}s of demo time businessId={} remaining={}s",
+                                elapsedSecs, session.getBusinessId(), resp.secondsRemaining());
+                    } else {
+                        log.warn("[demo] decrement returned null businessId={} elapsed={}s",
+                                session.getBusinessId(), elapsedSecs);
+                    }
                 } catch (Exception ex) {
                     log.error("[demo] FAILED to decrement demo time businessId={} elapsed={}s: {}",
                             session.getBusinessId(), elapsedSecs, ex.getMessage());
