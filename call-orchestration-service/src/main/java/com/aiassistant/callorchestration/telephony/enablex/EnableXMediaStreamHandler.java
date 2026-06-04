@@ -243,18 +243,34 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         }
     }
 
+    private static final int STT_ENERGY_THRESHOLD = 400;
+
     private void onAudioFrame(CallSession session, byte[] audioPayload) {
+        CallRecorder.push(session, audioPayload);
+
+        boolean voiced = rmsEnergy(audioPayload) >= STT_ENERGY_THRESHOLD;
+
         Object stt = session.getProviderAttributes().get("sttSession");
-        if (stt instanceof SttSession sttSession) {
+        if (voiced && stt instanceof SttSession sttSession) {
             sttSession.pushAudio(audioPayload);
         }
-        CallRecorder.push(session, audioPayload);
+
         AudioCodec codec = (AudioCodec) session.getProviderAttributes()
                 .getOrDefault("codec", AudioCodec.MULAW);
         if (session.getGreetingDone().get() && hasVoice(audioPayload, codec)) {
             session.setLastCallerActivityMs(System.currentTimeMillis());
             session.setSilenceNudgedAtMs(0L);
         }
+    }
+
+    private static double rmsEnergy(byte[] mulaw) {
+        if (mulaw == null || mulaw.length == 0) return 0;
+        long sumSq = 0;
+        for (byte b : mulaw) {
+            short sample = MULAW_DECODE[b & 0xFF];
+            sumSq += (long) sample * sample;
+        }
+        return Math.sqrt((double) sumSq / mulaw.length);
     }
 
     private static final int VAD_MIN_VOICE_BYTES = 30;

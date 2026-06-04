@@ -62,20 +62,26 @@ public class CallRecorder {
         if (raw.length == 0) return;
 
         try {
-            byte[] pcm = (codec == AudioCodec.MULAW) ? mulawToPcm16(raw) : raw;
-
             String phone = sanitize(customerPhone != null ? customerPhone.replaceAll("[^0-9]", "") : "unknown");
             String bizId = sanitize(businessId != null ? businessId : "unknown");
             String ts = LocalDateTime.now().format(FILE_DT_FMT);
-            String fileName = phone + "_" + bizId + "_" + ts + ".wav";
+            String baseName = phone + "_" + bizId + "_" + ts;
 
             Path dir = RECORDING_DIR.resolve(provider != null ? provider : "unknown");
             Files.createDirectories(dir);
-            Path wavFile = dir.resolve(fileName);
+
+            // Save decoded WAV
+            byte[] pcm = (codec == AudioCodec.MULAW) ? mulawToPcm16(raw) : raw;
+            Path wavFile = dir.resolve(baseName + ".wav");
             writeWav(wavFile, pcm, sampleRate);
 
+            // Also save raw bytes for debugging codec issues
+            Path rawFile = dir.resolve(baseName + ".raw");
+            Files.write(rawFile, raw);
+
             double durationSecs = (double) pcm.length / (sampleRate * 2);
-            log.info("[recording] saved {} ({}s)", wavFile, String.format("%.1f", durationSecs));
+            log.info("[recording] saved {} ({}s, codec={}, rawBytes={})",
+                    wavFile, String.format("%.1f", durationSecs), codec, raw.length);
         } catch (Exception ex) {
             log.error("[recording] failed: {}", ex.getMessage());
         }
