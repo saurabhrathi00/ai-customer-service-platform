@@ -37,9 +37,8 @@ async function handle401(err: AxiosError, client: AxiosInstance) {
     return Promise.reject(err);
   }
   original._retried = true;
-  refreshing = refreshing ?? doRefresh();
+  refreshing = refreshing ?? doRefresh().finally(() => { refreshing = null; });
   const newToken = await refreshing;
-  refreshing = null;
   if (!newToken) {
     useAuthStore.getState().logout();
     window.location.assign('/login');

@@ -54,11 +54,12 @@ export const useAuthStore = create<AuthState>()(
 );
 
 export function isAuthenticated() {
-  const token = useAuthStore.getState().accessToken;
-  if (!token) return false;
-  const claims = decodeJwt<JwtClaims>(token);
+  const { accessToken, refreshToken } = useAuthStore.getState();
+  if (!accessToken) return false;
+  const claims = decodeJwt<JwtClaims>(accessToken);
   if (!claims?.exp) return false;
-  return claims.exp * 1000 > Date.now();
+  if (claims.exp * 1000 > Date.now()) return true;
+  return Boolean(refreshToken);
 }
 
 export function isAdmin() {

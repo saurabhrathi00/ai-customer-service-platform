@@ -44,7 +44,7 @@ export default function LeadDetailPage() {
   const q = useQuery({
     queryKey: ['leads', businessId, leadId],
     queryFn: () => leads.get(businessId, leadId!),
-    enabled: Boolean(leadId),
+    enabled: Boolean(businessId && leadId),
   });
 
   const onActioned = (newStatus: 'APPROVED' | 'DECLINED' | 'IGNORED') => {
