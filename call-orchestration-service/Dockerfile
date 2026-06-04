@@ -1,7 +1,7 @@
 # ---------- Build RNNoise native library ----------
 FROM ubuntu:22.04 AS rnnoise-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git autoconf automake libtool gcc make ca-certificates \
+        git autoconf automake libtool gcc make ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 https://github.com/xiph/rnnoise.git /rnnoise \
     && cd /rnnoise \
