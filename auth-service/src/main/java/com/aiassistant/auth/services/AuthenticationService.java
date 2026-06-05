@@ -145,6 +145,18 @@ public class AuthenticationService {
                 .build();
     }
 
+    @Transactional
+    public void changePassword(String email, String currentPassword, String newPassword) {
+        BusinessAuthEntity business = businessAuthRepository.findByEmail(email)
+                .orElseThrow(() -> new AuthFailedException("Business not found"));
+        if (!passwordEncoder.matches(currentPassword, business.getPasswordHash())) {
+            throw new AuthFailedException("Current password is incorrect");
+        }
+        business.setPasswordHash(passwordEncoder.encode(newPassword));
+        businessAuthRepository.save(business);
+        log.info("Password changed for email={}", email);
+    }
+
     private Map<String, Object> buildUserClaims(BusinessAuthEntity business) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("uid", business.getId());

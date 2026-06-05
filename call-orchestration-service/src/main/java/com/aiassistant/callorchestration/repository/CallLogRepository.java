@@ -17,4 +17,6 @@ public interface CallLogRepository extends JpaRepository<CallLogEntity, String> 
     Optional<CallLogEntity> findByIdAndBusinessId(String id, String businessId);
 
     Optional<CallLogEntity> findByProviderCallId(String providerCallId);
+
+    List<CallLogEntity> findByIdInAndBusinessId(List<String> ids, String businessId);
 }

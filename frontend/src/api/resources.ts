@@ -22,6 +22,11 @@ import type {
 export const auth = {
   signin: (email: string, password: string) =>
     authApi.post<AuthenticationResponse>('/auth/signin', { email, password }).then((r) => r.data),
+
+  changePassword: (email: string, currentPassword: string, newPassword: string) =>
+    authApi
+      .post<{ message: string }>('/auth/change-password', { email, currentPassword, newPassword })
+      .then((r) => r.data),
 };
 
 // ---------- business ----------
@@ -132,6 +137,11 @@ export const calls = {
 
   delete: (businessId: string, callId: string) =>
     callsApi.delete<void>(`/calls/${businessId}/${callId}`).then((r) => r.data),
+
+  deleteBulk: (businessId: string, callIds: string[]) =>
+    callsApi
+      .delete<{ deleted: number }>(`/calls/${businessId}/bulk`, { data: callIds })
+      .then((r) => r.data),
 };
 
 // ---------- leads ----------

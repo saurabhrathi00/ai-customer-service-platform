@@ -1,5 +1,6 @@
 package com.aiassistant.auth.controllers;
 
+import com.aiassistant.auth.models.request.ChangePasswordRequest;
 import com.aiassistant.auth.models.request.RefreshTokenRequest;
 import com.aiassistant.auth.models.request.SigninRequest;
 import com.aiassistant.auth.models.response.AuthenticationResponse;
@@ -8,6 +9,8 @@ import com.aiassistant.auth.services.AuthenticationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+
+import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,5 +35,15 @@ public class AuthenticationController {
             @Valid @RequestBody RefreshTokenRequest request) {
         RefreshTokenResponse response = authService.refreshToken(request.getRefreshToken());
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(
+                request.getEmail().trim().toLowerCase(),
+                request.getCurrentPassword(),
+                request.getNewPassword());
+        return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
     }
 }

@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { PhoneCall, Search, PhoneForwarded, Star } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PhoneCall, Search, PhoneForwarded, Star, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { calls } from '@/api/resources';
 import { useAuthStore } from '@/store/auth';
@@ -23,6 +25,8 @@ export default function CallsListPage() {
   const filterParam = (params.get('filter') as FilterKey) || 'all';
   const [filter, setFilter] = useState<FilterKey>(filterParam);
   const [q, setQ] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
 
   const recent = useQuery({
     queryKey: ['calls', 'recent', businessId],
@@ -34,8 +38,6 @@ export default function CallsListPage() {
 
   const filtered = useMemo(() => {
     const all = recent.data ?? [];
-    // Resolve the effective interest + callback for each call, preferring
-    // summary-service truth over the call_logs snapshot.
     const eff = (c: typeof all[number]) => {
       const s = summaryMap.get(c.id);
       return {
@@ -55,8 +57,6 @@ export default function CallsListPage() {
       );
     }
     return list.slice().sort((a, b) => {
-      // Callbacks tab: highest interest first, then newest as a tie-break,
-      // so the most promising leads to ring back are at the top.
       if (filter === 'callbacks') {
         const ia = eff(a).interest ?? -1;
         const ib = eff(b).interest ?? -1;
@@ -66,8 +66,36 @@ export default function CallsListPage() {
     });
   }, [recent.data, filter, q, summaryMap]);
 
+  const bulkDelete = useMutation({
+    mutationFn: () => calls.deleteBulk(businessId!, [...selected]),
+    onSuccess: (data) => {
+      toast.success(`${data.deleted} call${data.deleted === 1 ? '' : 's'} deleted`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ['calls', 'recent', businessId] });
+    },
+    onError: () => toast.error('Failed to delete calls'),
+  });
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((c) => c.id)));
+    }
+  }
+
   function selectFilter(next: FilterKey) {
     setFilter(next);
+    setSelected(new Set());
     if (next === 'all') {
       params.delete('filter');
     } else {
@@ -75,6 +103,9 @@ export default function CallsListPage() {
     }
     setParams(params, { replace: true });
   }
+
+  const allChecked = filtered.length > 0 && selected.size === filtered.length;
+  const someChecked = selected.size > 0 && selected.size < filtered.length;
 
   return (
     <>
@@ -95,14 +126,27 @@ export default function CallsListPage() {
               <Star className="h-3.5 w-3.5" /> Hot leads
             </FilterChip>
           </div>
-          <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search by name, phone, summary…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => bulkDelete.mutate()}
+                loading={bulkDelete.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete {selected.size}
+              </Button>
+            )}
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search by name, phone, summary…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
           </div>
         </div>
 
@@ -129,6 +173,15 @@ export default function CallsListPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b bg-muted/50 text-left">
                     <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allChecked}
+                          ref={(el) => { if (el) el.indeterminate = someChecked; }}
+                          onChange={toggleAll}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                      </th>
                       <th className="px-4 py-3 font-medium">Caller</th>
                       <th className="px-4 py-3 font-medium hidden md:table-cell">Summary</th>
                       <th className="px-4 py-3 font-medium">Time</th>
@@ -143,11 +196,22 @@ export default function CallsListPage() {
                       const summaryText = s?.summaryText ?? c.callSummary;
                       const interest = s?.interestRating ?? c.interestRating;
                       const callback = s?.callbackNeeded ?? c.callbackRequested;
+                      const checked = selected.has(c.id);
                       return (
                         <tr
                           key={c.id}
-                          className="border-b transition-colors last:border-0 hover:bg-accent/30"
+                          className={`border-b transition-colors last:border-0 hover:bg-accent/30 ${
+                            checked ? 'bg-primary/5' : ''
+                          }`}
                         >
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleSelect(c.id)}
+                              className="h-4 w-4 rounded border-border"
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <Link to={`/calls/${c.id}`} className="block min-w-0">
                               <div className="font-medium truncate max-w-[16rem]">
