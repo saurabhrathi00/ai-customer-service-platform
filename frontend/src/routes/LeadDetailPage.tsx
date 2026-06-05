@@ -77,10 +77,10 @@ export default function LeadDetailPage() {
       leads.approve(businessId, leadId!, isAppointment ? toIso(slot) : null),
     onSuccess: () => {
       toast.success(
-        isAppointment ? ‘Appointment confirmed. WhatsApp sent.’ : ‘Lead approved. Customer notified.’,
+        isAppointment ? 'Appointment confirmed. WhatsApp sent.' : 'Lead approved. Customer notified.',
       );
-      onActioned(‘APPROVED’);
-      navigate(‘/leads’);
+      onActioned('APPROVED');
+      navigate('/leads');
     },
     onError: () => {/* axios interceptor toasts the error */},
   });
@@ -88,18 +88,18 @@ export default function LeadDetailPage() {
   const decline = useMutation({
     mutationFn: () => leads.decline(businessId, leadId!, reason.trim()),
     onSuccess: () => {
-      toast.success(‘Lead declined. Customer notified with your reason.’);
-      onActioned(‘DECLINED’);
-      navigate(‘/leads’);
+      toast.success('Lead declined. Customer notified with your reason.');
+      onActioned('DECLINED');
+      navigate('/leads');
     },
   });
 
   const ignore = useMutation({
     mutationFn: () => leads.ignore(businessId, leadId!),
     onSuccess: () => {
-      toast.success(‘Dismissed. Customer wasn’t notified.’);
-      onActioned(‘IGNORED’);
-      navigate(‘/leads’);
+      toast.success('Dismissed. Customer wasn't notified.');
+      onActioned('IGNORED');
+      navigate('/leads');
     },
   });
 
@@ -194,8 +194,8 @@ export default function LeadDetailPage() {
                         />
                         <p className="text-xs text-muted-foreground">
                           {lead.suggestedDatetime
-                            ? 'Pre-filled with the AI’s best guess — change if needed.'
-                            : 'Caller didn’t specify a time. Pick what works for you.'}
+                            ? 'Pre-filled with the AI's best guess — change if needed.'
+                            : 'Caller didn't specify a time. Pick what works for you.'}
                         </p>
                       </div>
                     )}
@@ -238,7 +238,7 @@ export default function LeadDetailPage() {
                           <Label>Reason (sent to the customer on WhatsApp)</Label>
                           <Textarea
                             rows={3}
-                            placeholder="e.g. We’re fully booked that week."
+                            placeholder="e.g. We're fully booked that week."
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                           />
