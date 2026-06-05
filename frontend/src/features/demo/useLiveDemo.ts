@@ -156,8 +156,8 @@ export function useLiveDemo(): UseLiveDemoReturn {
             resumeStream: async () => stream,
             positiveSpeechThreshold: 0.6,
             negativeSpeechThreshold: 0.4,
-            minSpeechFrames: 3,
-            redemptionFrames: 8,
+            minSpeechMs: 3,
+            redemptionMs: 8,
             onSpeechStart: () => {
               isSpeakingRef.current = true;
             },

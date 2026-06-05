@@ -47,7 +47,7 @@ export default function LeadDetailPage() {
     enabled: Boolean(businessId && leadId),
   });
 
-  const onActioned = (newStatus: 'APPROVED' | 'DECLINED' | 'IGNORED') => {
+  const onActioned = (_newStatus: 'APPROVED' | 'DECLINED' | 'IGNORED') => {
     qc.setQueryData<import('@/types/api').LeadResponse[]>(
       ['leads', businessId],
       (old) => old?.filter((l) => l.id !== leadId),
