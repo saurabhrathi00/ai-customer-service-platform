@@ -194,8 +194,8 @@ export default function LeadDetailPage() {
                         />
                         <p className="text-xs text-muted-foreground">
                           {lead.suggestedDatetime
-                            ? 'Pre-filled with the AI's best guess — change if needed.'
-                            : 'Caller didn't specify a time. Pick what works for you.'}
+                            ? "Pre-filled with the AI's best guess — change if needed."
+                            : "Caller didn't specify a time. Pick what works for you."}
                         </p>
                       </div>
                     )}
