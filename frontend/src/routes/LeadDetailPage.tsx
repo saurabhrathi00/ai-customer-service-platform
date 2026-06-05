@@ -97,7 +97,7 @@ export default function LeadDetailPage() {
   const ignore = useMutation({
     mutationFn: () => leads.ignore(businessId, leadId!),
     onSuccess: () => {
-      toast.success('Dismissed. Customer wasn't notified.');
+      toast.success("Dismissed. Customer wasn't notified.");
       onActioned('IGNORED');
       navigate('/leads');
     },
