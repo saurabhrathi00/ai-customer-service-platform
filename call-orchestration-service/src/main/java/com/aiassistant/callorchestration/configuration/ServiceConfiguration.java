@@ -23,7 +23,13 @@ public class ServiceConfiguration {
     private Filler filler = new Filler();
     private Silence silence = new Silence();
     private BargeIn bargeIn = new BargeIn();
+    private Recording recording = new Recording();
     private EnableXApi enablexApi;
+
+    @Data
+    public static class Recording {
+        private boolean enabled = false;
+    }
 
     @Data
     public static class EnableXApi {

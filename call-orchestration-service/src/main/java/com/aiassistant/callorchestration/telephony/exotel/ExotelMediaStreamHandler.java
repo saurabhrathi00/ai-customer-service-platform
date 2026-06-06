@@ -188,7 +188,9 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         log.info("[exotel] call started callId={} encoding={} sampleRate={} bitRate={} codec={}",
                 session.getCallId(), encoding, sampleRate, bitRate, codec);
 
-        CallRecorder.attach(session, codec, sampleRate);
+        if (serviceConfiguration.getRecording().isEnabled()) {
+            CallRecorder.attach(session, codec, sampleRate);
+        }
 
         // Hydrate from custom_parameters (Exotel uses snake_case)
         JsonNode cp = start.path("custom_parameters");
@@ -238,7 +240,9 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
         if (stt instanceof SttSession sttSession) {
             sttSession.pushAudio(audioPayload);
         }
-        CallRecorder.push(session, audioPayload);
+        if (serviceConfiguration.getRecording().isEnabled()) {
+            CallRecorder.push(session, audioPayload);
+        }
         AudioCodec codec = (AudioCodec) session.getProviderAttributes()
                 .getOrDefault("codec", AudioCodec.MULAW);
         if (session.getGreetingDone().get() && hasVoice(audioPayload, codec)) {
@@ -274,7 +278,9 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Override
     public void onDisconnect(CallSession session, String reason) {
         log.info("[exotel] onDisconnect callId={} reason={}", session.getCallId(), reason);
-        CallRecorder.flush(session);
+        if (serviceConfiguration.getRecording().isEnabled()) {
+            CallRecorder.flush(session);
+        }
         cancelSilenceWatchdog(session);
         safeEndAiConversation(session.getCallId());
     }

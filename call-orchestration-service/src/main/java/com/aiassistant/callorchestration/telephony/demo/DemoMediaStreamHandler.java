@@ -138,7 +138,9 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
         session.getProviderAttributes().put("demoSecondsRemaining", demoTime.secondsRemaining());
         session.getProviderAttributes().put("demoStartMs", System.currentTimeMillis());
 
-        CallRecorder.attach(session, DEMO_CODEC, DEMO_SAMPLE_RATE);
+        if (serviceConfiguration.getRecording().isEnabled()) {
+            CallRecorder.attach(session, DEMO_CODEC, DEMO_SAMPLE_RATE);
+        }
 
         sendEvent(ws, "started", Map.of("secondsRemaining", demoTime.secondsRemaining()));
 
@@ -187,7 +189,9 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
                         if (stt instanceof SttSession sttSession) {
                             sttSession.pushAudio(audio);
                         }
-                        CallRecorder.push(session, audio);
+                        if (serviceConfiguration.getRecording().isEnabled()) {
+                            CallRecorder.push(session, audio);
+                        }
                     }
                 }
                 case "stop" -> {
@@ -208,7 +212,9 @@ public class DemoMediaStreamHandler implements TelephonyMediaStreamHandler {
     }
 
     private void endDemo(CallSession session, String reason) {
-        CallRecorder.flush(session);
+        if (serviceConfiguration.getRecording().isEnabled()) {
+            CallRecorder.flush(session);
+        }
         cancelDemoTimer(session);
         cancelSilenceWatchdog(session);
 
