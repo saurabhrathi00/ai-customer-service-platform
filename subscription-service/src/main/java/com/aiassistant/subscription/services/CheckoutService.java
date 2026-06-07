@@ -54,16 +54,16 @@ public class CheckoutService {
                 .businessId(req.getBusinessId())
                 .planId(plan.getId())
                 .status("PENDING_PAYMENT")
-                .razorpaySubscriptionId(rzpSub.get("id"))
+                .razorpaySubscriptionId((String) rzpSub.get("id"))
                 .build();
         subscriptionRepository.save(entity);
 
         log.info("Checkout created subscription={} razorpay={} plan={}",
-                entity.getId(), rzpSub.get("id"), plan.getSlug());
+                entity.getId(), (String) rzpSub.get("id"), plan.getSlug());
 
         return CheckoutResponse.builder()
                 .subscriptionId(entity.getId())
-                .razorpaySubscriptionId(rzpSub.get("id"))
+                .razorpaySubscriptionId((String) rzpSub.get("id"))
                 .razorpayKeyId(razorpayService.getKeyId())
                 .build();
     }

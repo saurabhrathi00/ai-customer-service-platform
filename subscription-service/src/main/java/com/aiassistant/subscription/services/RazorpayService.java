@@ -77,7 +77,7 @@ public class RazorpayService {
             request.put("quantity", 1);
 
             Subscription subscription = razorpayClient.subscriptions.create(request);
-            log.info("Razorpay subscription created: {}", subscription.get("id"));
+            log.info("Razorpay subscription created: {}", (String) subscription.get("id"));
             return subscription;
         } catch (RazorpayException e) {
             log.error("Failed to create Razorpay subscription: {}", e.getMessage());
