@@ -26,16 +26,27 @@ public class RazorpayService {
 
     @PostConstruct
     void init() {
+        String keyId = secrets.getRazorpay() != null ? secrets.getRazorpay().getKeyId() : null;
+        String keySecret = secrets.getRazorpay() != null ? secrets.getRazorpay().getKeySecret() : null;
+        if (keyId == null || keyId.isBlank() || keyId.equals("REPLACE_ME")) {
+            log.warn("Razorpay credentials not configured — payment features disabled. Manual subscriptions still work.");
+            return;
+        }
         try {
-            razorpayClient = new RazorpayClient(
-                    secrets.getRazorpay().getKeyId(),
-                    secrets.getRazorpay().getKeySecret());
+            razorpayClient = new RazorpayClient(keyId, keySecret);
         } catch (RazorpayException e) {
-            throw new IllegalStateException("Failed to initialise Razorpay client", e);
+            log.error("Failed to initialise Razorpay client: {}", e.getMessage());
+        }
+    }
+
+    private void requireClient() {
+        if (razorpayClient == null) {
+            throw new IllegalStateException("Razorpay is not configured. Set razorpay credentials in secrets.properties.");
         }
     }
 
     public String createRazorpayPlan(String planName, int amountPaise, String period, int interval) {
+        requireClient();
         try {
             JSONObject item = new JSONObject();
             item.put("name", planName);
@@ -58,6 +69,7 @@ public class RazorpayService {
     }
 
     public Subscription createSubscription(String razorpayPlanId, int totalCount) {
+        requireClient();
         try {
             JSONObject request = new JSONObject();
             request.put("plan_id", razorpayPlanId);
@@ -74,6 +86,7 @@ public class RazorpayService {
     }
 
     public void cancelSubscription(String razorpaySubscriptionId, boolean cancelAtCycleEnd) {
+        requireClient();
         try {
             JSONObject request = new JSONObject();
             request.put("cancel_at_cycle_end", cancelAtCycleEnd ? 1 : 0);
