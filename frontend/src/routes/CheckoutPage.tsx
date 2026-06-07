@@ -11,6 +11,17 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Check } from 'lucide-react';
 
+function loadRazorpay(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Razorpay'));
+    document.head.appendChild(s);
+  });
+}
+
 const schema = z.object({
   businessName: z.string().min(2, 'Business name is required'),
   ownerName: z.string().min(2, 'Owner name is required'),
@@ -45,7 +56,10 @@ export default function CheckoutPage() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: subscription.checkout,
+    mutationFn: async (input: Parameters<typeof subscription.checkout>[0]) => {
+      await loadRazorpay();
+      return subscription.checkout(input);
+    },
     onSuccess: (data) => {
       if (!plan) return;
       const options = {
