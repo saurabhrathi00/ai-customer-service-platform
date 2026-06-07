@@ -1,3 +1,5 @@
+-- All monetary values are in PAISE (₹1 = 100 paise), matching Razorpay's convention.
+-- e.g. price_monthly 700000 = ₹7,000, extra_call_rate 5000 = ₹50/call.
 INSERT INTO plans (id, name, slug, description, price_monthly, calls_included, max_call_duration_sec, channels, phone_numbers, extra_call_rate, features, is_active, display_order, is_popular)
 VALUES
     ('01PLAN0STARTER000000000000', 'Starter', 'starter',

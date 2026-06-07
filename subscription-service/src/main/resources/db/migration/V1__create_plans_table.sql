@@ -1,3 +1,4 @@
+-- All monetary columns (price_monthly, extra_call_rate) are stored in PAISE (₹1 = 100 paise).
 CREATE TABLE IF NOT EXISTS plans (
     id                    VARCHAR(26)  PRIMARY KEY,
     name                  VARCHAR(50)  NOT NULL,

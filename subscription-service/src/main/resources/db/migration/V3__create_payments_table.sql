@@ -1,3 +1,4 @@
+-- All monetary columns (amount, gst_amount) are stored in PAISE (₹1 = 100 paise).
 CREATE TABLE IF NOT EXISTS payments (
     id                   VARCHAR(26)  PRIMARY KEY,
     business_id          VARCHAR(26)  NOT NULL,
