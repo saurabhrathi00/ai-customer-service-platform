@@ -12,7 +12,7 @@ VALUES
      '{"post_call_summary": true, "crm_integration": true, "custom_voice": false, "languages": ["hindi", "english"], "availability": "24/7"}',
      TRUE, 2, TRUE),
 
-    ('01PLAN0PRO00000000000000000', 'Pro', 'pro',
+    ('01PLAN0PRO0000000000000000', 'Pro', 'pro',
      'Full-featured plan for high-volume businesses.',
      3000000, 500, 300, 3, 2, 4000,
      '{"post_call_summary": true, "crm_integration": true, "custom_voice": true, "languages": ["hindi", "english", "multi"], "availability": "24/7"}',
