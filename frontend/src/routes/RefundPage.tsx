@@ -1,3 +1,5 @@
+import { COMPANY } from '@/lib/constants';
+
 export default function RefundPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
@@ -39,7 +41,7 @@ export default function RefundPage() {
           <h2 className="text-lg font-semibold text-foreground">Contact</h2>
           <p className="mt-2">
             If you have questions about billing or cancellation, reach out to us at
-            support@voxhelperai.com or call +91-XXXXXXXXXX.
+            {COMPANY.email} or call {COMPANY.phone}.
           </p>
         </section>
       </div>

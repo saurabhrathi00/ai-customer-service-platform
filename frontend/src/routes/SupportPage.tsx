@@ -1,4 +1,5 @@
 import { Mail, Phone, MessageCircle } from 'lucide-react';
+import { COMPANY } from '@/lib/constants';
 
 export default function SupportPage() {
   return (
@@ -12,27 +13,27 @@ export default function SupportPage() {
         <div className="flex flex-col items-center rounded-xl border p-6 text-center">
           <Mail className="h-8 w-8 text-primary" />
           <h3 className="mt-3 font-semibold">Email</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            support@voxhelperai.com
-          </p>
+          <a href={`mailto:${COMPANY.email}`} className="mt-1 text-sm text-muted-foreground hover:text-primary transition-colors">
+            {COMPANY.email}
+          </a>
           <p className="mt-1 text-xs text-muted-foreground">We reply within 24 hours</p>
         </div>
 
         <div className="flex flex-col items-center rounded-xl border p-6 text-center">
           <Phone className="h-8 w-8 text-primary" />
           <h3 className="mt-3 font-semibold">Phone</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            +91-XXXXXXXXXX
-          </p>
+          <a href={`tel:${COMPANY.phoneRaw}`} className="mt-1 text-sm text-muted-foreground hover:text-primary transition-colors">
+            {COMPANY.phone}
+          </a>
           <p className="mt-1 text-xs text-muted-foreground">Mon-Sat, 10 AM - 7 PM IST</p>
         </div>
 
         <div className="flex flex-col items-center rounded-xl border p-6 text-center">
           <MessageCircle className="h-8 w-8 text-primary" />
           <h3 className="mt-3 font-semibold">WhatsApp</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            +91-XXXXXXXXXX
-          </p>
+          <a href={COMPANY.whatsappUrl} target="_blank" rel="noopener noreferrer" className="mt-1 text-sm text-muted-foreground hover:text-primary transition-colors">
+            {COMPANY.whatsapp}
+          </a>
           <p className="mt-1 text-xs text-muted-foreground">Quick responses</p>
         </div>
       </div>

@@ -14,6 +14,7 @@ const TermsPage = lazy(() => import('./TermsPage'));
 const PrivacyPage = lazy(() => import('./PrivacyPage'));
 const RefundPage = lazy(() => import('./RefundPage'));
 const SupportPage = lazy(() => import('./SupportPage'));
+const AboutPage = lazy(() => import('./AboutPage'));
 const DashboardPage = lazy(() => import('./DashboardPage'));
 const CallsListPage = lazy(() => import('./CallsListPage'));
 const CallDetailPage = lazy(() => import('./CallDetailPage'));
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
   {
     element: <PublicLayout />,
     children: [
+      { path: '/about', element: <Suspended><AboutPage /></Suspended> },
       { path: '/pricing', element: <Suspended><PricingPage /></Suspended> },
       { path: '/checkout/:slug', element: <Suspended><CheckoutPage /></Suspended> },
       { path: '/terms', element: <Suspended><TermsPage /></Suspended> },

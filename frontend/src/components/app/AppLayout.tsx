@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { Logo } from './Logo';
+import { Footer } from './Footer';
 import { SessionExpiryGuard } from './SessionExpiryGuard';
 import { useTheme } from './ThemeProvider';
 import { useAuthStore } from '@/store/auth';
@@ -121,8 +122,11 @@ export function AppLayout() {
           </div>
         )}
 
-        <main className="flex-1 min-w-0">
-          <Outlet />
+        <main className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1">
+            <Outlet />
+          </div>
+          <Footer />
         </main>
       </div>
     </div>

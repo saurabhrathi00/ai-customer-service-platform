@@ -1,3 +1,5 @@
+import { COMPANY } from '@/lib/constants';
+
 export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
@@ -81,7 +83,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">7. Contact Us</h2>
           <p className="mt-2">
-            For privacy-related queries, contact us at support@voxhelperai.com.
+            For privacy-related queries, contact us at {COMPANY.email}.
           </p>
         </section>
       </div>
