@@ -5,6 +5,7 @@
     { "source": "/api/knowledge/:path*", "destination": "https://voxhelperaibackend.duckdns.org/knowledge-service/:path*" },
     { "source": "/api/calls/:path*", "destination": "https://voxhelperaibackend.duckdns.org/call-orchestration-service/:path*" },
     { "source": "/api/summary/:path*", "destination": "https://voxhelperaibackend.duckdns.org/conversation-summary-service/:path*" },
+    { "source": "/api/subscription/:path*", "destination": "https://voxhelperaibackend.duckdns.org/subscription-service/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
