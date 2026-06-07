@@ -207,7 +207,12 @@ export const subscription = {
     subscriptionApi.post<CheckoutResponse>('/subscriptions/checkout', input).then((r) => r.data),
 
   current: (businessId: string) =>
-    subscriptionApi.get<SubscriptionResponse>(`/subscriptions/${businessId}/current`).then((r) => r.data),
+    subscriptionApi.get<SubscriptionResponse>(`/subscriptions/${businessId}/current`)
+      .then((r) => r.data)
+      .catch((err) => {
+        if (err.response?.status === 404) return null;
+        throw err;
+      }),
 
   cancel: (businessId: string) =>
     subscriptionApi.post<SubscriptionResponse>(`/subscriptions/${businessId}/cancel`).then((r) => r.data),
