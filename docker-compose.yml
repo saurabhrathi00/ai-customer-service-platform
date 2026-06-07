@@ -170,9 +170,8 @@ services:
     environment:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
       CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
-      # Stub mode in dev — flip to false when Meta WhatsApp Business Account
-      # + templates are live (see notification-service/META_WHATSAPP_SETUP.md).
-      CONFIGS_WHATSAPP_STUBMODE: "true"
+      CONFIGS_WHATSAPP_STUBMODE: "false"
+      CONFIGS_WHATSAPP_PHONENUMBERID: "1190086194182241"
       CONFIGS_DASHBOARD_LEAD_LINK: ${CONFIGS_DASHBOARD_LEAD_LINK:-http://localhost:5173/leads/}
     volumes:
       - /etc/secrets/notification-service/secrets.properties:/etc/secrets/secrets.properties:ro
