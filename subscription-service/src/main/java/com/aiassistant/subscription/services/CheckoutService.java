@@ -1,5 +1,6 @@
 package com.aiassistant.subscription.services;
 
+import com.aiassistant.subscription.exceptions.AppException;
 import com.aiassistant.subscription.exceptions.ConflictException;
 import com.aiassistant.subscription.exceptions.NotFoundException;
 import com.aiassistant.subscription.models.dao.PlanEntity;
@@ -37,7 +38,7 @@ public class CheckoutService {
         }
 
         if (plan.getRazorpayPlanId() == null || plan.getRazorpayPlanId().isBlank()) {
-            throw new IllegalStateException("Plan not synced with Razorpay: " + plan.getSlug());
+            throw new AppException("Online payments are not available yet. Please contact us to subscribe.");
         }
 
         if (req.getBusinessId() != null) {

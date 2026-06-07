@@ -79,8 +79,13 @@ export default function CheckoutPage() {
       const rzp = new window.Razorpay(options);
       rzp.open();
     },
-    onError: () => {
-      toast.error('Failed to initiate checkout. Please try again.');
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message;
+      if (msg?.includes('not synced with Razorpay') || msg?.includes('not configured')) {
+        toast.error('Online payments are not available yet. Please contact us to subscribe.');
+      } else {
+        toast.error('Failed to initiate checkout. Please try again.');
+      }
     },
   });
 
