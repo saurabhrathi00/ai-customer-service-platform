@@ -23,6 +23,8 @@ public final class BusinessMapper {
                 .operatingHours(e.getOperatingHours())
                 .whatsappNumber(e.getWhatsappNumber())
                 .liveDemoSecondsRemaining(e.getLiveDemoSecondsRemaining())
+                .subscriptionStatus(e.getSubscriptionStatus())
+                .subscriptionId(e.getSubscriptionId())
                 .isActive(e.getIsActive())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())

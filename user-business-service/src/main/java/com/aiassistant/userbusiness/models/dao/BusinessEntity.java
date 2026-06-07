@@ -58,6 +58,12 @@ public class BusinessEntity {
     @Builder.Default
     private Integer liveDemoSecondsRemaining = 300;
 
+    @Column(name = "subscription_status")
+    private String subscriptionStatus;
+
+    @Column(name = "subscription_id")
+    private String subscriptionId;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 

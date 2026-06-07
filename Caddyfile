@@ -17,7 +17,7 @@
 	encode zstd gzip
 
 	# Block requests that don't match any service prefix
-	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/* /conversation-summary-service/*
+	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/* /conversation-summary-service/* /subscription-service/*
 	respond @unknown "Not Found" 404
 
 	# Each service already sets server.servlet.context-path matching its prefix,
@@ -50,6 +50,10 @@
 	# Internal endpoints on this service are reached via the docker network only.
 	route /conversation-summary-service/* {
 		reverse_proxy conversation-summary-service:8089
+	}
+
+	route /subscription-service/* {
+		reverse_proxy subscription-service:8091
 	}
 
 	# ai-conversation-service and notification-service are intentionally NOT

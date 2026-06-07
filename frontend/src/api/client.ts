@@ -74,8 +74,9 @@ function surface(err: AxiosError) {
   toast.error(message, { id: `${status}-${err.config?.url}` });
 }
 
-export const authApi      = makeClient('/api/auth/api/v1');
-export const businessApi  = makeClient('/api/business/api/v1');
-export const knowledgeApi = makeClient('/api/knowledge/api/v1');
-export const callsApi     = makeClient('/api/calls/api/v1');
-export const summaryApi   = makeClient('/api/summary/api/v1');
+export const authApi         = makeClient('/api/auth/api/v1');
+export const businessApi     = makeClient('/api/business/api/v1');
+export const knowledgeApi    = makeClient('/api/knowledge/api/v1');
+export const callsApi        = makeClient('/api/calls/api/v1');
+export const summaryApi      = makeClient('/api/summary/api/v1');
+export const subscriptionApi = makeClient('/api/subscription/api/v1');

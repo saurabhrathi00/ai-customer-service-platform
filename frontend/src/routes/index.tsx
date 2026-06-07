@@ -2,11 +2,18 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { lazy, Suspense } from 'react';
 import { isAuthenticated } from '@/store/auth';
 import { AppLayout } from '@/components/app/AppLayout';
+import { PublicLayout } from '@/components/app/PublicLayout';
 import { ErrorBoundary } from '@/components/app/ErrorBoundary';
 import { PageSkeleton } from '@/components/app/PageSkeleton';
 
 const LoginPage = lazy(() => import('./LoginPage'));
 const RegisterPage = lazy(() => import('./RegisterPage'));
+const PricingPage = lazy(() => import('./PricingPage'));
+const CheckoutPage = lazy(() => import('./CheckoutPage'));
+const TermsPage = lazy(() => import('./TermsPage'));
+const PrivacyPage = lazy(() => import('./PrivacyPage'));
+const RefundPage = lazy(() => import('./RefundPage'));
+const SupportPage = lazy(() => import('./SupportPage'));
 const DashboardPage = lazy(() => import('./DashboardPage'));
 const CallsListPage = lazy(() => import('./CallsListPage'));
 const CallDetailPage = lazy(() => import('./CallDetailPage'));
@@ -43,6 +50,17 @@ export const router = createBrowserRouter([
         <RegisterPage />
       </Suspended>
     ),
+  },
+  {
+    element: <PublicLayout />,
+    children: [
+      { path: '/pricing', element: <Suspended><PricingPage /></Suspended> },
+      { path: '/checkout/:slug', element: <Suspended><CheckoutPage /></Suspended> },
+      { path: '/terms', element: <Suspended><TermsPage /></Suspended> },
+      { path: '/privacy', element: <Suspended><PrivacyPage /></Suspended> },
+      { path: '/refund', element: <Suspended><RefundPage /></Suspended> },
+      { path: '/support', element: <Suspended><SupportPage /></Suspended> },
+    ],
   },
   {
     element: <Protected />,

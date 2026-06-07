@@ -160,6 +160,17 @@ public class BusinessService {
                 .build();
     }
 
+    @Transactional
+    public void updateSubscriptionStatus(String businessId, String subscriptionStatus, String subscriptionId) {
+        BusinessEntity entity = loadBusiness(businessId);
+        entity.setSubscriptionStatus(subscriptionStatus);
+        if (subscriptionId != null) {
+            entity.setSubscriptionId(subscriptionId);
+        }
+        businessRepository.save(entity);
+        log.info("Business subscription status updated id={} status={}", businessId, subscriptionStatus);
+    }
+
     BusinessEntity loadBusiness(String businessId) {
         return businessRepository.findById(businessId)
                 .orElseThrow(() -> new BusinessNotFoundException(

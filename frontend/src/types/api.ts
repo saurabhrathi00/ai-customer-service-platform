@@ -19,6 +19,8 @@ export interface BusinessResponse {
   /** E.164 WhatsApp number for owner-facing lead notifications. */
   whatsappNumber: string | null;
   liveDemoSecondsRemaining: number;
+  subscriptionStatus: string | null;
+  subscriptionId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string | null;
@@ -198,6 +200,59 @@ export interface CallSummaryResponse {
   callbackReason: string | null;
   unansweredQuestions: string[] | null;
   summaryText: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+// ---------- subscription ----------
+export interface PlanResponse {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  priceMonthly: number;
+  callsIncluded: number;
+  maxCallDurationSec: number;
+  channels: number;
+  phoneNumbers: number;
+  extraCallRate: number;
+  features: Record<string, unknown>;
+  isActive: boolean;
+  displayOrder: number;
+  isPopular: boolean;
+  razorpayPlanId: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CheckoutRequest {
+  planSlug: string;
+  businessId?: string;
+  businessName?: string;
+  ownerName?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface CheckoutResponse {
+  subscriptionId: string;
+  razorpaySubscriptionId: string;
+  razorpayKeyId: string;
+}
+
+export interface SubscriptionResponse {
+  id: string;
+  businessId: string;
+  plan: PlanResponse | null;
+  status: string;
+  razorpaySubscriptionId: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  callsUsed: number;
+  callsRemaining: number;
+  daysRemaining: number;
+  cancelAtPeriodEnd: boolean;
+  cancelledAt: string | null;
   createdAt: string;
   updatedAt: string | null;
 }

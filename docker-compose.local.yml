@@ -123,6 +123,15 @@ services:
       - ./call-orchestration-service/configs/service.properties:/etc/service.properties:ro
       - ./call-orchestration-service/secrets/secrets.properties:/etc/secrets.properties:ro
 
+  subscription-service:
+    environment:
+      <<: *spring-config
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+    volumes:
+      - ./subscription-service/configs/service.properties:/etc/service.properties:ro
+      - ./subscription-service/secrets/secrets.properties:/etc/secrets.properties:ro
+
   incoming-call-service:
     environment:
       <<: *spring-config

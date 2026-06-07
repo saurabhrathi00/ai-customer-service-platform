@@ -66,6 +66,8 @@ services:
         condition: service_healthy
       call-orchestration-service:
         condition: service_healthy
+      subscription-service:
+        condition: service_healthy
 
   auth-service:
     build:
@@ -214,6 +216,27 @@ services:
       # Not in depends_on: conversation-summary-service is only contacted
       # post-call (async). Requiring it at boot would create a startup
       # cycle (summary-service also calls back here for transcripts).
+
+  subscription-service:
+    build:
+      context: ./subscription-service
+    image: ai-customer-service/subscription-service:latest
+    container_name: subscription-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8091"
+    environment:
+      CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
+      CONFIGS_USERBUSINESSSERVICE_BASEURL: http://user-business-service:8082/user-business-service
+    volumes:
+      - /etc/secrets/subscription-service/secrets.properties:/etc/secrets/secrets.properties:ro
+    networks:
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-business-service:
+        condition: service_healthy
 
   incoming-call-service:
     build:

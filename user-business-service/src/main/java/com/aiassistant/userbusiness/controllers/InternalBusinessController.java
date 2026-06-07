@@ -1,15 +1,18 @@
 package com.aiassistant.userbusiness.controllers;
 
+import com.aiassistant.userbusiness.models.request.UpdateSubscriptionStatusRequest;
 import com.aiassistant.userbusiness.models.response.BusinessLookupResponse;
 import com.aiassistant.userbusiness.models.response.DemoTimeResponse;
 import com.aiassistant.userbusiness.models.response.ExistsResponse;
 import com.aiassistant.userbusiness.services.BusinessService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,5 +48,14 @@ public class InternalBusinessController {
             @PathVariable("id") String id,
             @RequestParam("seconds") int seconds) {
         return ResponseEntity.ok(businessService.decrementDemoTime(id, seconds));
+    }
+
+    @PostMapping("/{id}/subscription-status")
+    @PreAuthorize("hasAuthority('SCOPE_business.internal.write')")
+    public ResponseEntity<Void> updateSubscriptionStatus(
+            @PathVariable("id") String id,
+            @Valid @RequestBody UpdateSubscriptionStatusRequest request) {
+        businessService.updateSubscriptionStatus(id, request.getSubscriptionStatus(), request.getSubscriptionId());
+        return ResponseEntity.ok().build();
     }
 }

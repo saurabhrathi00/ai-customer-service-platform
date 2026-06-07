@@ -20,7 +20,8 @@ export default defineConfig({
       '/api/knowledge': { target: 'http://localhost:8083', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/knowledge/, '/knowledge-service') },
       '/api/calls':     { target: 'http://localhost:8086', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/calls/, '/call-orchestration-service') },
       '/api/summary':   { target: 'http://localhost:8089', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/summary/, '/conversation-summary-service') },
-      '/api/notify':    { target: 'http://localhost:8090', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/notify/, '/notification-service') },
+      '/api/notify':        { target: 'http://localhost:8090', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/notify/, '/notification-service') },
+      '/api/subscription': { target: 'http://localhost:8091', changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/subscription/, '/subscription-service') },
     },
   },
 });

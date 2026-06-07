@@ -8,7 +8,7 @@
 :80 {
 	encode zstd gzip
 
-	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/*
+	@unknown not path /auth-service/* /user-business-service/* /knowledge-service/* /incoming-call-service/* /call-orchestration-service/* /subscription-service/*
 	respond @unknown "Not Found" 404
 
 	route /auth-service/* {
@@ -29,5 +29,9 @@
 
 	route /call-orchestration-service/* {
 		reverse_proxy call-orchestration-service:8086
+	}
+
+	route /subscription-service/* {
+		reverse_proxy subscription-service:8091
 	}
 }

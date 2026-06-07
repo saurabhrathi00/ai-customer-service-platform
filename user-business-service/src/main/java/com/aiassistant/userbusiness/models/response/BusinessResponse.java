@@ -21,6 +21,8 @@ public class BusinessResponse {
      *  Null until owner sets it in settings. */
     String whatsappNumber;
     Integer liveDemoSecondsRemaining;
+    String subscriptionStatus;
+    String subscriptionId;
     Boolean isActive;
     Instant createdAt;
     Instant updatedAt;

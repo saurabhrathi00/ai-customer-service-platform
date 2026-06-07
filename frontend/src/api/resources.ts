@@ -1,9 +1,11 @@
-import { authApi, businessApi, callsApi, knowledgeApi, summaryApi } from './client';
+import { authApi, businessApi, callsApi, knowledgeApi, subscriptionApi, summaryApi } from './client';
 import type {
   AuthenticationResponse,
   BusinessResponse,
   CallLogResponse,
   CallSummaryResponse,
+  CheckoutRequest,
+  CheckoutResponse,
   CompletenessResponse,
   EscalationAction,
   EscalationRuleResponse,
@@ -12,10 +14,12 @@ import type {
   LeadNotificationSettingsResponse,
   LeadResponse,
   PhoneNumberResponse,
+  PlanResponse,
   ProfileResponse,
   RatingConfigResponse,
   RatingSignalKey,
   ReminderMode,
+  SubscriptionResponse,
 } from '@/types/api';
 
 // ---------- auth ----------
@@ -189,6 +193,24 @@ export const leadSettings = {
     businessApi
       .put<LeadNotificationSettingsResponse>(`/business/${businessId}/lead-settings`, patch)
       .then((r) => r.data),
+};
+
+// ---------- subscription ----------
+export const subscription = {
+  plans: () =>
+    subscriptionApi.get<PlanResponse[]>('/plans').then((r) => r.data),
+
+  planBySlug: (slug: string) =>
+    subscriptionApi.get<PlanResponse>(`/plans/${slug}`).then((r) => r.data),
+
+  checkout: (input: CheckoutRequest) =>
+    subscriptionApi.post<CheckoutResponse>('/subscriptions/checkout', input).then((r) => r.data),
+
+  current: (businessId: string) =>
+    subscriptionApi.get<SubscriptionResponse>(`/subscriptions/${businessId}/current`).then((r) => r.data),
+
+  cancel: (businessId: string) =>
+    subscriptionApi.post<SubscriptionResponse>(`/subscriptions/${businessId}/cancel`).then((r) => r.data),
 };
 
 // ---------- summaries ----------
