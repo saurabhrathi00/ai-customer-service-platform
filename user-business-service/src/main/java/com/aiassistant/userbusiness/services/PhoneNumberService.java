@@ -60,16 +60,25 @@ public class PhoneNumberService {
         if (phoneNumber != null && phoneNumber.startsWith("+")) {
             phoneNumber = phoneNumber.substring(1);
         }
-        if (providerPhoneNumberRepository.existsByPhoneNumber(phoneNumber)) {
-            throw new ConflictException("Phone number already registered: " + phoneNumber);
-        }
 
-        ProviderPhoneNumberEntity providerNumber = ProviderPhoneNumberEntity.builder()
-                .providerId(provider.getId())
-                .phoneNumber(phoneNumber)
-                .status("assigned")
-                .build();
-        providerNumber = providerPhoneNumberRepository.save(providerNumber);
+        ProviderPhoneNumberEntity providerNumber;
+        var existing = providerPhoneNumberRepository.findByPhoneNumber(phoneNumber);
+        if (existing.isPresent()) {
+            if ("assigned".equals(existing.get().getStatus())) {
+                throw new ConflictException("Phone number already registered: " + phoneNumber);
+            }
+            providerNumber = existing.get();
+            providerNumber.setStatus("assigned");
+            providerNumber.setProviderId(provider.getId());
+            providerNumber = providerPhoneNumberRepository.save(providerNumber);
+        } else {
+            providerNumber = ProviderPhoneNumberEntity.builder()
+                    .providerId(provider.getId())
+                    .phoneNumber(phoneNumber)
+                    .status("assigned")
+                    .build();
+            providerNumber = providerPhoneNumberRepository.save(providerNumber);
+        }
 
         BusinessPhoneNumberEntity link = BusinessPhoneNumberEntity.builder()
                 .businessId(businessId)
