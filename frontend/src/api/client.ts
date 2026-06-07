@@ -67,7 +67,7 @@ async function doRefresh(): Promise<string | null> {
 function surface(err: AxiosError) {
   const status = err.response?.status;
   // Don't toast on 401 — handled by redirect; don't toast on cancelled requests
-  if (status === 401 || err.code === 'ERR_CANCELED') return;
+  if (status === 401 || status === 404 || err.code === 'ERR_CANCELED') return;
   const body = err.response?.data as { message?: string } | undefined;
   const message = body?.message ?? err.message ?? 'Unexpected error';
   // Avoid spamming on background queries that fail repeatedly

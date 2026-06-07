@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowRight } from 'lucide-react';
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { auth } from '@/api/resources';
-import { useAuthStore } from '@/store/auth';
+import { isAuthenticated, useAuthStore } from '@/store/auth';
 
 const schema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -26,6 +26,10 @@ export default function LoginPage() {
   const location = useLocation();
   const from = (location.state as { from?: string })?.from ?? '/';
   const setTokens = useAuthStore((s) => s.setTokens);
+
+  if (isAuthenticated()) {
+    return <Navigate to={from} replace />;
+  }
   const [showPwd, setShowPwd] = React.useState(false);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
