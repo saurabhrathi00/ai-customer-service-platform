@@ -126,7 +126,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        {sub.data?.plan && (
+        {sub.data?.plan ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -173,6 +173,20 @@ export default function DashboardPage() {
                   tone={sub.data.daysRemaining <= 5 ? 'warning' : 'default'}
                 />
               </div>
+            </CardContent>
+          </Card>
+        ) : !sub.isLoading && (
+          <Card>
+            <CardContent className="flex items-center justify-between p-6">
+              <div>
+                <p className="font-semibold">No active plan</p>
+                <p className="text-sm text-muted-foreground">
+                  Subscribe to a plan to start using your AI voice agent.
+                </p>
+              </div>
+              <Link to="/pricing">
+                <Button>View Plans</Button>
+              </Link>
             </CardContent>
           </Card>
         )}
