@@ -29,55 +29,55 @@ class BaseBargeInHandlerTest {
 
     @Test
     void noBarge_whenBotNotSpeaking() {
-        assertFalse(handler.tryBargeIn(session, "hello there", config));
+        assertFalse(handler.onFinal(session, "hello there", config));
     }
 
     @Test
     void noBarge_whenDisabled() {
         config.setEnabled(false);
         makeBotSpeaking(5000);
-        assertFalse(handler.tryBargeIn(session, "hello there", config));
+        assertFalse(handler.onFinal(session, "hello there", config));
     }
 
     @Test
     void noBarge_whenTextTooShort() {
         makeBotSpeaking(5000);
-        assertFalse(handler.tryBargeIn(session, "hi", config));
+        assertFalse(handler.onFinal(session, "hi", config));
     }
 
     @Test
     void noBarge_onBackchannel() {
         makeBotSpeaking(5000);
-        assertFalse(handler.tryBargeIn(session, "hmm", config));
-        assertFalse(handler.tryBargeIn(session, "haan ji", config));
-        assertFalse(handler.tryBargeIn(session, "ok", config));
-        assertFalse(handler.tryBargeIn(session, "achha", config));
+        assertFalse(handler.onFinal(session, "hmm", config));
+        assertFalse(handler.onFinal(session, "haan ji", config));
+        assertFalse(handler.onFinal(session, "ok", config));
+        assertFalse(handler.onFinal(session, "achha", config));
     }
 
     @Test
     void noBarge_duringGracePeriod() {
         makeBotSpeaking(5000);
         session.setBotSpeakingStartMs(System.currentTimeMillis() - 100);
-        assertFalse(handler.tryBargeIn(session, "what is the price", config));
+        assertFalse(handler.onFinal(session, "what is the price", config));
     }
 
     @Test
     void noBarge_whenAlmostDoneSpeaking() {
         makeBotSpeaking(200);
-        assertFalse(handler.tryBargeIn(session, "what is the price", config));
+        assertFalse(handler.onFinal(session, "what is the price", config));
     }
 
     @Test
     void noBarge_whenDebounceActive() {
         makeBotSpeaking(5000);
         session.setLastBargeInMs(System.currentTimeMillis() - 100);
-        assertFalse(handler.tryBargeIn(session, "what is the price", config));
+        assertFalse(handler.onFinal(session, "what is the price", config));
     }
 
     @Test
     void barges_whenAllConditionsMet() {
         makeBotSpeaking(5000);
-        assertTrue(handler.tryBargeIn(session, "what is the price", config));
+        assertTrue(handler.onFinal(session, "what is the price", config));
         assertEquals(0L, session.getEstimatedPlayoutEndMs(),
                 "playout should be reset after barge-in");
         assertEquals(0L, session.getBotSpeakingStartMs(),
@@ -91,37 +91,37 @@ class BaseBargeInHandlerTest {
     @Test
     void debounce_preventsRapidBargeIns() {
         makeBotSpeaking(10000);
-        assertTrue(handler.tryBargeIn(session, "stop stop stop", config));
+        assertTrue(handler.onFinal(session, "stop stop stop", config));
         makeBotSpeaking(10000);
-        assertFalse(handler.tryBargeIn(session, "I said stop", config),
+        assertFalse(handler.onFinal(session, "I said stop", config),
                 "second barge-in within debounce window should be rejected");
     }
 
     @Test
     void multiWordBackchannel_isFiltered() {
         makeBotSpeaking(5000);
-        assertFalse(handler.tryBargeIn(session, "ok ok", config));
-        assertFalse(handler.tryBargeIn(session, "haan theek", config));
+        assertFalse(handler.onFinal(session, "ok ok", config));
+        assertFalse(handler.onFinal(session, "haan theek", config));
     }
 
     @Test
     void realSpeech_isNotBackchannel() {
         makeBotSpeaking(5000);
-        assertTrue(handler.tryBargeIn(session, "mujhe price batao", config));
+        assertTrue(handler.onFinal(session, "mujhe price batao", config));
     }
 
     @Test
     void noBarge_whenEchoOfBotSpeech() {
         makeBotSpeaking(5000);
         session.recordBotUtterance("अच्छा, तो building systems के बारे में बताइए।");
-        assertFalse(handler.tryBargeIn(session, "building systems के बारे में बताइए", config));
+        assertFalse(handler.onFinal(session, "building systems के बारे में बताइए", config));
     }
 
     @Test
     void barges_whenTextDifferentFromBot() {
         makeBotSpeaking(5000);
         session.recordBotUtterance("हमारे पास roofing solutions हैं");
-        assertTrue(handler.tryBargeIn(session, "mujhe price batao please", config));
+        assertTrue(handler.onFinal(session, "mujhe price batao please", config));
     }
 
     @Test
@@ -130,7 +130,7 @@ class BaseBargeInHandlerTest {
         CallSession.BotUtterance old = CallSession.BotUtterance.builder()
                 .text("building systems ke baare mein").timestampMs(System.currentTimeMillis() - 20_000).build();
         session.getRecentBotUtterances().addLast(old);
-        assertTrue(handler.tryBargeIn(session, "building systems ke baare mein batao", config));
+        assertTrue(handler.onFinal(session, "building systems ke baare mein batao", config));
     }
 
     @Test
