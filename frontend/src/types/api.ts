@@ -249,6 +249,7 @@ export interface SubscriptionResponse {
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   callsUsed: number;
+  minutesUsed: number;
   callsRemaining: number;
   daysRemaining: number;
   cancelAtPeriodEnd: boolean;

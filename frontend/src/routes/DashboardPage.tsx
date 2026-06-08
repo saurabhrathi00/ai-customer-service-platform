@@ -9,6 +9,9 @@ import {
   Clock,
   ArrowUpRight,
   Play,
+  Gauge,
+  CalendarDays,
+  Timer,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -28,7 +31,7 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { LiveDemoModal } from '@/features/demo/LiveDemoModal';
-import { calls, business } from '@/api/resources';
+import { calls, business, subscription } from '@/api/resources';
 import { useAuthStore, isAdmin } from '@/store/auth';
 import {
   callDuration,
@@ -54,6 +57,13 @@ export default function DashboardPage() {
     queryFn: () => calls.recent(businessId!),
     enabled: Boolean(businessId),
     refetchInterval: 60_000,
+  });
+
+  const sub = useQuery({
+    queryKey: ['subscription', businessId],
+    queryFn: () => subscription.current(businessId!),
+    enabled: Boolean(businessId),
+    retry: false,
   });
 
   const { map: summaryMap } = useSummariesByCallId();
@@ -115,6 +125,57 @@ export default function DashboardPage() {
             tone="success"
           />
         </div>
+
+        {sub.data?.plan && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Plan Usage</CardTitle>
+                  <CardDescription>
+                    {sub.data.plan.name} plan — {sub.data.daysRemaining} days remaining
+                  </CardDescription>
+                </div>
+                <Link
+                  to="/settings"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
+                  Manage <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                <UsageMeter
+                  label="Calls used"
+                  used={sub.data.callsUsed}
+                  total={sub.data.plan.callsIncluded}
+                  unit="calls"
+                  icon={PhoneCall}
+                />
+                <UsageMeter
+                  label="Minutes used"
+                  used={sub.data.minutesUsed}
+                  total={null}
+                  unit="min"
+                  icon={Timer}
+                />
+                <UsageItem
+                  label="Calls remaining"
+                  value={String(sub.data.callsRemaining)}
+                  icon={Gauge}
+                  tone={sub.data.callsRemaining <= 10 ? 'warning' : 'success'}
+                />
+                <UsageItem
+                  label="Days remaining"
+                  value={String(sub.data.daysRemaining)}
+                  icon={CalendarDays}
+                  tone={sub.data.daysRemaining <= 5 ? 'warning' : 'default'}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
@@ -362,6 +423,72 @@ function ChartTooltip({ active, label, payload }: ChartTooltipProps) {
     <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md bg-card">
       <p className="font-medium">{label}</p>
       <p className="text-muted-foreground">{payload[0].value} calls</p>
+    </div>
+  );
+}
+
+function UsageMeter({
+  label,
+  used,
+  total,
+  unit,
+  icon: Icon,
+}: {
+  label: string;
+  used: number;
+  total: number | null;
+  unit: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  const pct = total ? Math.min(100, Math.round((used / total) * 100)) : null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        {label}
+      </div>
+      <p className="text-2xl font-semibold tracking-tight">
+        {used}
+        {total != null && <span className="text-base font-normal text-muted-foreground">/{total}</span>}
+        <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>
+      </p>
+      {pct != null && (
+        <div className="h-2 w-full rounded-full bg-muted">
+          <div
+            className={`h-full rounded-full transition-all ${
+              pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-primary'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsageItem({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: 'default' | 'success' | 'warning';
+}) {
+  const toneText: Record<typeof tone, string> = {
+    default: '',
+    success: 'text-[hsl(var(--success))]',
+    warning: 'text-[hsl(var(--warning))]',
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        {label}
+      </div>
+      <p className={`text-2xl font-semibold tracking-tight ${toneText[tone]}`}>{value}</p>
     </div>
   );
 }
