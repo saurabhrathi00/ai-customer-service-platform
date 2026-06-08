@@ -19,8 +19,6 @@ public class BaseBargeInHandler implements BargeInHandler {
 
     @Override
     public void clearCarrierBuffer(CallSession session) {
-        // No-op — base provider has no carrier buffer flush mechanism.
-        // Audio already sent to carrier will play out naturally.
     }
 
     @Override
@@ -31,16 +29,14 @@ public class BaseBargeInHandler implements BargeInHandler {
 
     @Override
     public void notifyAiService(CallSession session, String interruptedByText) {
-        // No-op by default. The next MESSAGE sent to ai-conv implicitly
-        // supersedes the interrupted turn. Providers can override to send
-        // an explicit BARGE_IN event if the AI model benefits from knowing
-        // the previous response was cut short.
     }
 
     @Override
     public boolean isBotSpeaking(CallSession session) {
         return System.currentTimeMillis() < session.getEstimatedPlayoutEndMs();
     }
+
+    // ── Single-stage barge-in (finals only, legacy path) ──
 
     @Override
     public boolean tryBargeIn(CallSession session, String sttText,
@@ -84,22 +80,117 @@ public class BaseBargeInHandler implements BargeInHandler {
             return false;
         }
 
-        // --- Execute barge-in ---
-        log.info("[barge-in] TRIGGERED callId={} text=\"{}\" remaining={}ms",
+        executeBargeIn(session, trimmed, remainingMs, now);
+        return true;
+    }
+
+    // ── Two-stage barge-in ──
+
+    @Override
+    public BargeInAction tryPartialBargeIn(CallSession session, String partialText,
+                                           ServiceConfiguration.BargeIn config) {
+        if (!config.isEnabled() || !config.isTwoStageEnabled()) return BargeInAction.NONE;
+        if (!isBotSpeaking(session)) return BargeInAction.NONE;
+        if (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) return BargeInAction.PAUSE;
+
+        String trimmed = partialText == null ? "" : partialText.trim();
+        if (trimmed.length() < config.getPartialMinTextLength()) return BargeInAction.NONE;
+
+        String[] words = trimmed.split("\\s+");
+        if (words.length < config.getPartialMinWordCount()) return BargeInAction.NONE;
+
+        if (isBackchannel(trimmed)) return BargeInAction.NONE;
+
+        long now = System.currentTimeMillis();
+
+        long botStart = session.getBotSpeakingStartMs();
+        if (botStart > 0 && now - botStart < config.getGracePeriodMs()) return BargeInAction.NONE;
+
+        long remainingMs = session.getEstimatedPlayoutEndMs() - now;
+        if (remainingMs < config.getRemainingAudioThresholdMs()) return BargeInAction.NONE;
+
+        if (now - session.getLastBargeInMs() < config.getDebounceMs()) return BargeInAction.NONE;
+
+        // High-confidence partial → immediate full barge-in
+        if (trimmed.length() >= config.getImmediateMinTextLength()
+                && words.length >= config.getImmediateMinWordCount()) {
+            log.info("[barge-in] IMMEDIATE callId={} partial=\"{}\" remaining={}ms",
+                    session.getCallId(), trimmed, remainingMs);
+            executeBargeIn(session, trimmed, remainingMs, now);
+            return BargeInAction.IMMEDIATE;
+        }
+
+        // Medium-confidence partial → pause
+        log.info("[barge-in] STAGE1-PAUSE callId={} partial=\"{}\" remaining={}ms",
                 session.getCallId(), trimmed, remainingMs);
+        session.setBargeInStage(CallSession.BargeInStage.PAUSED);
+        session.setBargeInPausedAtMs(now);
+        return BargeInAction.PAUSE;
+    }
+
+    @Override
+    public boolean resolveAfterPause(CallSession session, String finalText,
+                                     ServiceConfiguration.BargeIn config) {
+        if (session.getBargeInStage() != CallSession.BargeInStage.PAUSED) {
+            return tryBargeIn(session, finalText, config);
+        }
+
+        String trimmed = finalText == null ? "" : finalText.trim();
+        long now = System.currentTimeMillis();
+        long pausedFor = now - session.getBargeInPausedAtMs();
+
+        boolean shouldResume = false;
+        String reason = null;
+
+        if (trimmed.length() < config.getMinTextLength()) {
+            shouldResume = true;
+            reason = "short";
+        } else if (isBackchannel(trimmed)) {
+            shouldResume = true;
+            reason = "backchannel";
+        } else if (isEchoOfBotSpeech(session, trimmed)) {
+            shouldResume = true;
+            reason = "echo";
+        }
+
+        // Reset pause state
+        session.setBargeInStage(CallSession.BargeInStage.NONE);
+        session.setBargeInPausedAtMs(0);
+
+        if (shouldResume) {
+            log.info("[barge-in] STAGE2-RESUME callId={} reason={} text=\"{}\" pausedForMs={}",
+                    session.getCallId(), reason, trimmed, pausedFor);
+            return false;
+        }
+
+        // Confirm: full barge-in
+        long remainingMs = session.getEstimatedPlayoutEndMs() - now;
+        log.info("[barge-in] STAGE2-CONFIRM callId={} text=\"{}\" pausedForMs={}",
+                session.getCallId(), trimmed, pausedFor);
+        executeBargeIn(session, trimmed, remainingMs, now);
+        return true;
+    }
+
+    // ── Shared execution ──
+
+    private void executeBargeIn(CallSession session, String text, long remainingMs, long now) {
+        log.info("[barge-in] EXECUTE callId={} text=\"{}\" remaining={}ms",
+                session.getCallId(), text, remainingMs);
 
         clearCarrierBuffer(session);
         cancelTtsGeneration(session);
-        notifyAiService(session, trimmed);
+        notifyAiService(session, text);
 
         session.setEstimatedPlayoutEndMs(0);
         session.setBotSpeakingStartMs(0);
         session.setLastBargeInMs(now);
-
-        return true;
+        session.setBargeInStage(CallSession.BargeInStage.NONE);
+        session.setBargeInPausedAtMs(0);
     }
 
-    private static boolean isBackchannel(String text) {
+    // ── Guard helpers ──
+
+    static boolean isBackchannel(String text) {
         String lower = text.toLowerCase(java.util.Locale.ROOT);
         if (BACKCHANNEL_WORDS.contains(lower)) return true;
         String[] words = lower.split("\\s+");

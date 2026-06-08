@@ -151,6 +151,18 @@ public class CallSession {
     @Builder.Default
     private volatile long lastBargeInMs = 0L;
 
+    /** Two-stage barge-in state: NONE → PAUSED (on partial) → resolved on final. */
+    @Builder.Default
+    private volatile BargeInStage bargeInStage = BargeInStage.NONE;
+
+    /** Wall-clock ms when Stage 1 pause was triggered. Used for auto-resume timeout. */
+    @Builder.Default
+    private volatile long bargeInPausedAtMs = 0L;
+
+    public enum BargeInStage {
+        NONE, PAUSED
+    }
+
     /** Recent bot utterances for echo detection — STT text that matches
      *  what the bot recently said is carrier echo, not a real barge-in. */
     @Builder.Default

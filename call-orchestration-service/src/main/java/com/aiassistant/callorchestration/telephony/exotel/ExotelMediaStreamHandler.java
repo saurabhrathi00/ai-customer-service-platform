@@ -465,8 +465,25 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
             synthesize(session.getCallId(), msg);
         }
 
-        private void paceForCarrierBuffer(long sendStartMs, long totalBytesSent) {
+        private void paceForCarrierBuffer(long sendStartMs, long totalBytesSent, long myEpoch) {
             ServiceConfiguration.BargeIn cfg = serviceConfiguration.getBargeIn();
+
+            // Two-stage: freeze drip while paused
+            if (cfg.isTwoStageEnabled()) {
+                long deadline = session.getBargeInPausedAtMs() + cfg.getPauseTimeoutMs();
+                while (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
+                    if (session.getTtsEpoch().get() != myEpoch) return;
+                    if (System.currentTimeMillis() >= deadline) {
+                        log.info("[barge-in] PAUSE-TIMEOUT callId={}", session.getCallId());
+                        session.setBargeInStage(CallSession.BargeInStage.NONE);
+                        session.setBargeInPausedAtMs(0);
+                        break;
+                    }
+                    try { Thread.sleep(50); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                }
+            }
+
             long maxBuf = cfg.getMaxBufferMs();
             if (maxBuf <= 0) return;
             long audioSentMs = totalBytesSent / AudioCodec.MULAW.bytesPerMs();
@@ -516,7 +533,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                         int n = Math.min(frame, mulawBytes.length - sent);
                         byte[] piece = java.util.Arrays.copyOfRange(mulawBytes, sent, sent + n);
                         sent += n;
-                        paceForCarrierBuffer(pacingStart, sent);
+                        paceForCarrierBuffer(pacingStart, sent, myEpoch);
                         notePlayoutChunk(piece.length);
                         sendMediaChunk(ws, streamSid, b64, piece);
                     }
@@ -577,7 +594,7 @@ public class ExotelMediaStreamHandler implements TelephonyMediaStreamHandler {
                                     }
                                 }
                                 totalBytes[0] += chunk.length;
-                                paceForCarrierBuffer(pacingStart[0], totalBytes[0]);
+                                paceForCarrierBuffer(pacingStart[0], totalBytes[0], myEpoch);
                                 notePlayoutChunk(chunk.length);
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });

@@ -5,6 +5,7 @@ import com.aiassistant.callorchestration.configuration.SecretsConfiguration;
 import com.aiassistant.callorchestration.configuration.ServiceConfiguration;
 import com.aiassistant.callorchestration.services.ConversationCoordinator;
 import com.aiassistant.callorchestration.telephony.AudioCodec;
+import com.aiassistant.callorchestration.telephony.BargeInHandler;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.SttCallbackHandler;
 import com.aiassistant.callorchestration.telephony.TelephonyMediaStreamHandler;
@@ -56,6 +57,7 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
     @Qualifier("silenceWatchdogScheduler")
     private final ScheduledExecutorService silenceWatchdogScheduler;
 
+    private final BargeInHandler bargeInHandler = new TwilioBargeInHandler(new ObjectMapper());
 
     @Override
     public String providerId() {
@@ -175,6 +177,8 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                         SttCallbackHandler sttCallback = SttCallbackHandler.builder()
                                 .session(session)
                                 .conversationCoordinator(conversationCoordinator)
+                                .bargeInHandler(bargeInHandler)
+                                .serviceConfiguration(serviceConfiguration)
                                 .fillerAudioCache(fillerAudioCache)
                                 .build();
                         SttSession stt = speechToTextProvider.openSession(
@@ -609,40 +613,91 @@ public class TwilioMediaStreamHandler implements TelephonyMediaStreamHandler {
                     callId, text.length(),
                     text.length() > 80 ? text.substring(0, 80) + "…" : text);
 
+            long myEpoch = session.getTtsEpoch().get();
             ttsTail.updateAndGet(prev -> prev.thenRunAsync(() -> {
+                if (session.getTtsEpoch().get() != myEpoch) return;
                 if (!ws.isOpen()) {
                     log.debug("[tts] SKIP callId={} reason=ws-closed", callId);
                     return;
                 }
                 long start = System.currentTimeMillis();
                 int[] totalBytes = {0};
+                long[] pacingStart = {0};
                 try {
                     Base64.Encoder b64 = Base64.getEncoder();
                     log.debug("[tts] START callId={} (calling ElevenLabs)", callId);
                     textToSpeechProvider.synthesizeStream(text,
                             VoiceProfile.builder().language(session.getLanguage()).build(),
                             chunk -> {
-                                if (totalBytes[0] == 0 && session.getTurnStartMs() > 0) {
-                                    long sinceTurn = System.currentTimeMillis() - session.getTurnStartMs();
-                                    log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                if (session.getTtsEpoch().get() != myEpoch) {
+                                    throw new RuntimeException("barge-in: epoch stale");
+                                }
+                                if (totalBytes[0] == 0) {
+                                    pacingStart[0] = System.currentTimeMillis();
+                                    if (session.getTurnStartMs() > 0) {
+                                        long sinceTurn = pacingStart[0] - session.getTurnStartMs();
+                                        log.info("[latency] TTS-FIRST callId={} sttToFirstAudio={}ms", callId, sinceTurn);
+                                    }
                                 }
                                 totalBytes[0] += chunk.length;
+                                paceForCarrierBuffer(pacingStart[0], totalBytes[0], myEpoch);
+                                notePlayoutChunk(chunk.length);
                                 sendMediaChunk(ws, streamSid, b64, chunk);
                             });
                     log.debug("[tts] DONE  callId={} bytes={} totalMs={}",
                             callId, totalBytes[0], System.currentTimeMillis() - start);
                 } catch (Exception ex) {
-                    log.warn("[tts] FAIL  callId={} bytes={} reason={}",
-                            callId, totalBytes[0], ex.getMessage());
+                    if (!ex.getMessage().contains("barge-in")) {
+                        log.warn("[tts] FAIL  callId={} bytes={} reason={}",
+                                callId, totalBytes[0], ex.getMessage());
+                    }
                 } finally {
                     session.setLastTtsActivityMs(System.currentTimeMillis());
-                    // First real TTS task to complete = greeting done. STT
-                    // consumer can now start forwarding events.
                     if (session.getGreetingDone().compareAndSet(false, true)) {
                         log.info("[greeting] done — STT now active callId={}", callId);
                     }
                 }
             }, ttsExecutor).exceptionally(ex -> null));
+        }
+
+        private void paceForCarrierBuffer(long sendStartMs, long totalBytesSent, long myEpoch) {
+            ServiceConfiguration.BargeIn cfg = serviceConfiguration.getBargeIn();
+
+            if (cfg.isTwoStageEnabled()) {
+                long deadline = session.getBargeInPausedAtMs() + cfg.getPauseTimeoutMs();
+                while (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
+                    if (session.getTtsEpoch().get() != myEpoch) return;
+                    if (System.currentTimeMillis() >= deadline) {
+                        log.info("[barge-in] PAUSE-TIMEOUT callId={}", session.getCallId());
+                        session.setBargeInStage(CallSession.BargeInStage.NONE);
+                        session.setBargeInPausedAtMs(0);
+                        break;
+                    }
+                    try { Thread.sleep(50); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                }
+            }
+
+            long maxBuf = cfg.getMaxBufferMs();
+            if (maxBuf <= 0) return;
+            long audioSentMs = totalBytesSent / AudioCodec.MULAW.bytesPerMs();
+            long elapsedMs = System.currentTimeMillis() - sendStartMs;
+            long bufferMs = audioSentMs - elapsedMs;
+            if (bufferMs >= maxBuf) {
+                try { Thread.sleep(cfg.getDripIntervalMs()); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+        }
+
+        private void notePlayoutChunk(int bytesSent) {
+            long chunkMs = bytesSent / AudioCodec.MULAW.bytesPerMs();
+            long currentEnd = session.getEstimatedPlayoutEndMs();
+            long now = System.currentTimeMillis();
+            long newEnd = Math.max(currentEnd, now) + chunkMs;
+            session.setEstimatedPlayoutEndMs(newEnd);
+            if (session.getBotSpeakingStartMs() == 0) {
+                session.setBotSpeakingStartMs(now);
+            }
         }
 
         private void sendMediaChunk(WebSocketSession ws, String streamSid, Base64.Encoder b64, byte[] chunk) {
