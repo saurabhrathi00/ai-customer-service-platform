@@ -59,8 +59,6 @@ public class ServiceConfiguration {
         /** How often (ms) to drip the next chunk of audio into the carrier
          *  buffer. Should be less than maxBufferMs to prevent gaps. */
         private long dripIntervalMs = 400;
-        /** Enable two-stage barge-in: pause on partial, confirm/resume on final. */
-        private boolean twoStageEnabled = true;
         /** Min chars in partial to trigger Stage 1 pause. */
         private int partialMinTextLength = 6;
         /** Min words in partial to trigger Stage 1 pause. */

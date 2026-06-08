@@ -483,19 +483,17 @@ public class EnableXMediaStreamHandler implements TelephonyMediaStreamHandler {
         private void paceForCarrierBuffer(long sendStartMs, long totalBytesSent, long myEpoch) {
             ServiceConfiguration.BargeIn cfg = serviceConfiguration.getBargeIn();
 
-            if (cfg.isTwoStageEnabled()) {
-                long deadline = session.getBargeInPausedAtMs() + cfg.getPauseTimeoutMs();
-                while (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
-                    if (session.getTtsEpoch().get() != myEpoch) return;
-                    if (System.currentTimeMillis() >= deadline) {
-                        log.info("[barge-in] PAUSE-TIMEOUT callId={}", session.getCallId());
-                        session.setBargeInStage(CallSession.BargeInStage.NONE);
-                        session.setBargeInPausedAtMs(0);
-                        break;
-                    }
-                    try { Thread.sleep(50); }
-                    catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+            long deadline = session.getBargeInPausedAtMs() + cfg.getPauseTimeoutMs();
+            while (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
+                if (session.getTtsEpoch().get() != myEpoch) return;
+                if (System.currentTimeMillis() >= deadline) {
+                    log.info("[barge-in] PAUSE-TIMEOUT callId={}", session.getCallId());
+                    session.setBargeInStage(CallSession.BargeInStage.NONE);
+                    session.setBargeInPausedAtMs(0);
+                    break;
                 }
+                try { Thread.sleep(50); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
             }
 
             long maxBuf = cfg.getMaxBufferMs();

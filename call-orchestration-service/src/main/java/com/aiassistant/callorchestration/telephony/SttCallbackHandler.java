@@ -52,9 +52,8 @@ public class SttCallbackHandler implements Consumer<TranscriptEvent> {
         if (extraCallback != null) extraCallback.accept(sttEvent);
 
         if (!sttEvent.isFinal()) {
-            // Stage 1: attempt pause or immediate barge-in on partial
             if (bargeInHandler != null && serviceConfiguration != null) {
-                BargeInHandler.BargeInAction action = bargeInHandler.tryPartialBargeIn(
+                BargeInHandler.BargeInAction action = bargeInHandler.onPartial(
                         session, text.trim(), serviceConfiguration.getBargeIn());
                 if (action == BargeInHandler.BargeInAction.IMMEDIATE) {
                     log.info("[stt] immediate barge-in on partial callId={} text=\"{}\"",
@@ -64,11 +63,10 @@ public class SttCallbackHandler implements Consumer<TranscriptEvent> {
             return;
         }
 
-        // ── Final processing ──
         String trimmed = text.trim();
         if (trimmed.length() < MIN_FORWARD_CHARS) {
             if (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
-                log.info("[stt] STAGE2-RESUME-NOISE callId={} reason=too-short",
+                log.info("[stt] RESUME-NOISE callId={} reason=too-short",
                         session.getCallId());
                 session.setBargeInStage(CallSession.BargeInStage.NONE);
                 session.setBargeInPausedAtMs(0);
@@ -79,14 +77,8 @@ public class SttCallbackHandler implements Consumer<TranscriptEvent> {
         }
 
         if (bargeInHandler != null && serviceConfiguration != null) {
-            boolean barged;
-            if (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) {
-                barged = bargeInHandler.resolveAfterPause(
-                        session, trimmed, serviceConfiguration.getBargeIn());
-            } else {
-                barged = bargeInHandler.tryBargeIn(
-                        session, trimmed, serviceConfiguration.getBargeIn());
-            }
+            boolean barged = bargeInHandler.onFinal(
+                    session, trimmed, serviceConfiguration.getBargeIn());
 
             if (barged) {
                 log.info("[stt] barge-in accepted callId={} text=\"{}\"",

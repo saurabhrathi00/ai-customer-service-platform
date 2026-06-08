@@ -12,20 +12,15 @@ public interface BargeInHandler {
 
     boolean isBotSpeaking(CallSession session);
 
-    boolean tryBargeIn(CallSession session, String sttText,
-                       ServiceConfiguration.BargeIn config);
+    BargeInAction onPartial(CallSession session, String partialText,
+                            ServiceConfiguration.BargeIn config);
 
-    /** Stage 1: pause bot audio on a partial. Returns PAUSE or IMMEDIATE. */
-    BargeInAction tryPartialBargeIn(CallSession session, String partialText,
-                                    ServiceConfiguration.BargeIn config);
-
-    /** Stage 2: confirm or resume after pause, when final arrives. */
-    boolean resolveAfterPause(CallSession session, String finalText,
-                              ServiceConfiguration.BargeIn config);
+    boolean onFinal(CallSession session, String finalText,
+                    ServiceConfiguration.BargeIn config);
 
     enum BargeInAction {
-        NONE,       // ignore this partial
-        PAUSE,      // freeze audio drip, wait for final
-        IMMEDIATE   // full barge-in right now (high-confidence partial)
+        NONE,
+        PAUSE,
+        IMMEDIATE
     }
 }

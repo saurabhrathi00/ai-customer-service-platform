@@ -36,60 +36,10 @@ public class BaseBargeInHandler implements BargeInHandler {
         return System.currentTimeMillis() < session.getEstimatedPlayoutEndMs();
     }
 
-    // ── Single-stage barge-in (finals only, legacy path) ──
-
     @Override
-    public boolean tryBargeIn(CallSession session, String sttText,
-                              ServiceConfiguration.BargeIn config) {
-        if (!config.isEnabled()) return false;
-        if (!isBotSpeaking(session)) return false;
-
-        String trimmed = sttText == null ? "" : sttText.trim();
-        if (trimmed.length() < config.getMinTextLength()) return false;
-
-        if (isBackchannel(trimmed)) {
-            log.debug("[barge-in] SKIP-BACKCHANNEL callId={} text=\"{}\"",
-                    session.getCallId(), trimmed);
-            return false;
-        }
-
-        if (isEchoOfBotSpeech(session, trimmed)) {
-            log.info("[barge-in] SKIP-ECHO callId={} text=\"{}\"",
-                    session.getCallId(), trimmed);
-            return false;
-        }
-
-        long now = System.currentTimeMillis();
-
-        if (now - session.getLastBargeInMs() < config.getDebounceMs()) {
-            log.debug("[barge-in] SKIP-DEBOUNCE callId={}", session.getCallId());
-            return false;
-        }
-
-        long botStart = session.getBotSpeakingStartMs();
-        if (botStart > 0 && now - botStart < config.getGracePeriodMs()) {
-            log.debug("[barge-in] SKIP-GRACE callId={} botSpeakingFor={}ms",
-                    session.getCallId(), now - botStart);
-            return false;
-        }
-
-        long remainingMs = session.getEstimatedPlayoutEndMs() - now;
-        if (remainingMs < config.getRemainingAudioThresholdMs()) {
-            log.debug("[barge-in] SKIP-ALMOST-DONE callId={} remaining={}ms",
-                    session.getCallId(), remainingMs);
-            return false;
-        }
-
-        executeBargeIn(session, trimmed, remainingMs, now);
-        return true;
-    }
-
-    // ── Two-stage barge-in ──
-
-    @Override
-    public BargeInAction tryPartialBargeIn(CallSession session, String partialText,
-                                           ServiceConfiguration.BargeIn config) {
-        if (!config.isEnabled() || !config.isTwoStageEnabled()) return BargeInAction.NONE;
+    public BargeInAction onPartial(CallSession session, String partialText,
+                                   ServiceConfiguration.BargeIn config) {
+        if (!config.isEnabled()) return BargeInAction.NONE;
         if (!isBotSpeaking(session)) return BargeInAction.NONE;
         if (session.getBargeInStage() == CallSession.BargeInStage.PAUSED) return BargeInAction.PAUSE;
 
@@ -111,7 +61,6 @@ public class BaseBargeInHandler implements BargeInHandler {
 
         if (now - session.getLastBargeInMs() < config.getDebounceMs()) return BargeInAction.NONE;
 
-        // High-confidence partial → immediate full barge-in
         if (trimmed.length() >= config.getImmediateMinTextLength()
                 && words.length >= config.getImmediateMinWordCount()) {
             log.info("[barge-in] IMMEDIATE callId={} partial=\"{}\" remaining={}ms",
@@ -120,7 +69,6 @@ public class BaseBargeInHandler implements BargeInHandler {
             return BargeInAction.IMMEDIATE;
         }
 
-        // Medium-confidence partial → pause
         log.info("[barge-in] STAGE1-PAUSE callId={} partial=\"{}\" remaining={}ms",
                 session.getCallId(), trimmed, remainingMs);
         session.setBargeInStage(CallSession.BargeInStage.PAUSED);
@@ -129,49 +77,70 @@ public class BaseBargeInHandler implements BargeInHandler {
     }
 
     @Override
-    public boolean resolveAfterPause(CallSession session, String finalText,
-                                     ServiceConfiguration.BargeIn config) {
-        if (session.getBargeInStage() != CallSession.BargeInStage.PAUSED) {
-            return tryBargeIn(session, finalText, config);
-        }
+    public boolean onFinal(CallSession session, String finalText,
+                           ServiceConfiguration.BargeIn config) {
+        if (!config.isEnabled()) return false;
 
         String trimmed = finalText == null ? "" : finalText.trim();
         long now = System.currentTimeMillis();
-        long pausedFor = now - session.getBargeInPausedAtMs();
+        boolean wasPaused = session.getBargeInStage() == CallSession.BargeInStage.PAUSED;
 
-        boolean shouldResume = false;
-        String reason = null;
+        if (wasPaused) {
+            long pausedFor = now - session.getBargeInPausedAtMs();
+            session.setBargeInStage(CallSession.BargeInStage.NONE);
+            session.setBargeInPausedAtMs(0);
 
-        if (trimmed.length() < config.getMinTextLength()) {
-            shouldResume = true;
-            reason = "short";
-        } else if (isBackchannel(trimmed)) {
-            shouldResume = true;
-            reason = "backchannel";
-        } else if (isEchoOfBotSpeech(session, trimmed)) {
-            shouldResume = true;
-            reason = "echo";
+            String resumeReason = null;
+            if (trimmed.length() < config.getMinTextLength()) {
+                resumeReason = "short";
+            } else if (isBackchannel(trimmed)) {
+                resumeReason = "backchannel";
+            } else if (isEchoOfBotSpeech(session, trimmed)) {
+                resumeReason = "echo";
+            }
+
+            if (resumeReason != null) {
+                log.info("[barge-in] STAGE2-RESUME callId={} reason={} text=\"{}\" pausedForMs={}",
+                        session.getCallId(), resumeReason, trimmed, pausedFor);
+                return false;
+            }
+
+            long remainingMs = session.getEstimatedPlayoutEndMs() - now;
+            log.info("[barge-in] STAGE2-CONFIRM callId={} text=\"{}\" pausedForMs={}",
+                    session.getCallId(), trimmed, pausedFor);
+            executeBargeIn(session, trimmed, remainingMs, now);
+            return true;
         }
 
-        // Reset pause state
-        session.setBargeInStage(CallSession.BargeInStage.NONE);
-        session.setBargeInPausedAtMs(0);
+        // No prior pause — final arrived while bot is speaking without partial trigger.
+        // Apply full guard checks.
+        if (!isBotSpeaking(session)) return false;
 
-        if (shouldResume) {
-            log.info("[barge-in] STAGE2-RESUME callId={} reason={} text=\"{}\" pausedForMs={}",
-                    session.getCallId(), reason, trimmed, pausedFor);
+        if (trimmed.length() < config.getMinTextLength()) return false;
+
+        if (isBackchannel(trimmed)) {
+            log.debug("[barge-in] SKIP-BACKCHANNEL callId={} text=\"{}\"",
+                    session.getCallId(), trimmed);
             return false;
         }
 
-        // Confirm: full barge-in
+        if (isEchoOfBotSpeech(session, trimmed)) {
+            log.info("[barge-in] SKIP-ECHO callId={} text=\"{}\"",
+                    session.getCallId(), trimmed);
+            return false;
+        }
+
+        if (now - session.getLastBargeInMs() < config.getDebounceMs()) return false;
+
+        long botStart = session.getBotSpeakingStartMs();
+        if (botStart > 0 && now - botStart < config.getGracePeriodMs()) return false;
+
         long remainingMs = session.getEstimatedPlayoutEndMs() - now;
-        log.info("[barge-in] STAGE2-CONFIRM callId={} text=\"{}\" pausedForMs={}",
-                session.getCallId(), trimmed, pausedFor);
+        if (remainingMs < config.getRemainingAudioThresholdMs()) return false;
+
         executeBargeIn(session, trimmed, remainingMs, now);
         return true;
     }
-
-    // ── Shared execution ──
 
     private void executeBargeIn(CallSession session, String text, long remainingMs, long now) {
         log.info("[barge-in] EXECUTE callId={} text=\"{}\" remaining={}ms",
@@ -187,8 +156,6 @@ public class BaseBargeInHandler implements BargeInHandler {
         session.setBargeInStage(CallSession.BargeInStage.NONE);
         session.setBargeInPausedAtMs(0);
     }
-
-    // ── Guard helpers ──
 
     static boolean isBackchannel(String text) {
         String lower = text.toLowerCase(java.util.Locale.ROOT);
