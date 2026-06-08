@@ -58,4 +58,11 @@ public class HttpClientConfig {
                 .baseUrl(serviceConfiguration.getNotificationService().getBaseUrl())
                 .build();
     }
+
+    @Bean(name = "subscriptionServiceRestClient")
+    public RestClient subscriptionServiceRestClient() {
+        return RestClient.builder()
+                .baseUrl(serviceConfiguration.getSubscriptionService().getBaseUrl())
+                .build();
+    }
 }

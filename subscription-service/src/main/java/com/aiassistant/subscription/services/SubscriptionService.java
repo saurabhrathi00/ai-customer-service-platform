@@ -150,6 +150,7 @@ public class SubscriptionService {
                 .currentPeriodStart(sub.getCurrentPeriodStart())
                 .currentPeriodEnd(sub.getCurrentPeriodEnd())
                 .callsUsed(sub.getCallsUsed())
+                .minutesUsed(sub.getMinutesUsed())
                 .callsRemaining(callsRemaining)
                 .daysRemaining((int) daysRemaining)
                 .cancelAtPeriodEnd(sub.isCancelAtPeriodEnd())

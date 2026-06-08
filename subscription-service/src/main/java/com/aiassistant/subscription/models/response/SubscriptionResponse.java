@@ -18,6 +18,7 @@ public class SubscriptionResponse {
     Instant currentPeriodStart;
     Instant currentPeriodEnd;
     int callsUsed;
+    int minutesUsed;
     int callsRemaining;
     int daysRemaining;
     boolean cancelAtPeriodEnd;

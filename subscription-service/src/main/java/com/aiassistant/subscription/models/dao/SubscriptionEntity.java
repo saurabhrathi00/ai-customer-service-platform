@@ -40,6 +40,9 @@ public class SubscriptionEntity {
     @Column(name = "calls_used", nullable = false)
     private int callsUsed;
 
+    @Column(name = "minutes_used", nullable = false)
+    private int minutesUsed;
+
     @Column(name = "cancel_at_period_end", nullable = false)
     private boolean cancelAtPeriodEnd;
 

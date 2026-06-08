@@ -198,6 +198,8 @@ services:
       CONFIGS_AICONVERSATIONSERVICE_BASEURL: http://ai-conversation-service:8087/ai-conversation-service
       CONFIGS_AICONVERSATIONSERVICE_WSBASEURL: ws://ai-conversation-service:8087/ai-conversation-service/ws/conversation
       CONFIGS_CONVERSATIONSUMMARYSERVICE_BASEURL: http://conversation-summary-service:8089/conversation-summary-service
+      CONFIGS_NOTIFICATIONSERVICE_BASEURL: http://notification-service:8090/notification-service
+      CONFIGS_SUBSCRIPTIONSERVICE_BASEURL: http://subscription-service:8091/subscription-service
     volumes:
       - /etc/secrets/call-orchestration-service/secrets.properties:/etc/secrets/secrets.properties:ro
       - filler_audio_cache:/app/filler-cache

@@ -2,6 +2,7 @@ package com.aiassistant.callorchestration.services;
 
 import com.aiassistant.callorchestration.clients.ConversationSummaryServiceClient;
 import com.aiassistant.callorchestration.clients.NotificationServiceClient;
+import com.aiassistant.callorchestration.clients.SubscriptionServiceClient;
 import com.aiassistant.callorchestration.models.dao.CallLogEntity;
 import com.aiassistant.callorchestration.telephony.CallSession;
 import com.aiassistant.callorchestration.telephony.CallSessionRegistry;
@@ -25,6 +26,7 @@ public class PostCallOrchestrator {
     private final CallSessionRegistry callSessionRegistry;
     private final ConversationSummaryServiceClient summaryClient;
     private final NotificationServiceClient notificationClient;
+    private final SubscriptionServiceClient subscriptionClient;
 
     /**
      * Single post-call entry point used by both scenarios:
@@ -55,6 +57,7 @@ public class PostCallOrchestrator {
 
         triggerSummary(session, callLog);
         triggerCallbackNotification(callLog);
+        triggerUsageEvent(callLog);
 
         callSessionRegistry.remove(session.getCallId());
         return callLog;
@@ -75,6 +78,18 @@ public class PostCallOrchestrator {
         } catch (Exception ex) {
             log.error("Failed to trigger summary for callLogId={}: {}",
                     callLog.getId(), ex.getMessage(), ex);
+        }
+    }
+
+    @Async("postCallExecutor")
+    public void triggerUsageEvent(CallLogEntity callLog) {
+        try {
+            int durationSecs = callLog.getCallDurationSecs() != null ? callLog.getCallDurationSecs() : 0;
+            log.info("Triggering usage event for callLogId={} businessId={} durationSecs={}",
+                    callLog.getId(), callLog.getBusinessId(), durationSecs);
+            subscriptionClient.recordUsage(callLog.getBusinessId(), callLog.getId(), durationSecs);
+        } catch (Exception ex) {
+            log.error("Failed to record usage for callLogId={}: {}", callLog.getId(), ex.getMessage(), ex);
         }
     }
 

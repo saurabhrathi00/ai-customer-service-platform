@@ -16,6 +16,7 @@ public class ServiceConfiguration {
     private AiConversationService aiConversationService;
     private DownstreamService conversationSummaryService;
     private DownstreamService notificationService;
+    private DownstreamService subscriptionService;
     private Stt stt;
     private Tts tts;
     private ElevenLabs elevenlabs;
