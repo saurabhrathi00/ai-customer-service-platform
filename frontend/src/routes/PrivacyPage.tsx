@@ -32,7 +32,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">2. How We Use Your Information</h2>
           <ul className="mt-2 list-disc pl-5 space-y-1">
-            <li>To provide and improve the AI receptionist service.</li>
+            <li>To provide and improve the AI voice agent service.</li>
             <li>To generate call summaries, lead notifications, and analytics.</li>
             <li>To process payments and manage subscriptions.</li>
             <li>To send service-related notifications (payment confirmations, alerts).</li>

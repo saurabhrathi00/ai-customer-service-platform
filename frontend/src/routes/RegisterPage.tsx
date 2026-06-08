@@ -69,7 +69,7 @@ export default function RegisterPage() {
         <Logo />
         <h2 className="mt-6 text-2xl font-semibold tracking-tight">Create your account</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Get your AI receptionist set up in under five minutes.
+          Get your AI voice agent set up in under five minutes.
         </p>
 
         <form

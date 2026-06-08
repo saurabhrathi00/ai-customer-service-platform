@@ -64,9 +64,9 @@ export default function LoginPage() {
           <Logo />
           <div className="max-w-md">
             <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-              Your AI receptionist,
+              Your AI voice agent,
               <br />
-              answering every call.
+              handling every call.
             </h1>
             <p className="mt-4 text-muted-foreground">
               VoxAI answers your business calls 24/7 using the knowledge you

@@ -44,7 +44,7 @@ export default function SupportPage() {
           <div>
             <p className="font-medium">How long does setup take?</p>
             <p className="mt-1 text-muted-foreground">
-              After payment, our team sets up your AI receptionist within 24 hours.
+              After payment, our team sets up your AI voice agent within 24 hours.
               This includes allocating a phone number and configuring channels.
             </p>
           </div>
@@ -59,7 +59,7 @@ export default function SupportPage() {
             <p className="font-medium">What happens when I exceed my call limit?</p>
             <p className="mt-1 text-muted-foreground">
               Extra calls beyond your plan limit are charged at the per-call rate
-              specified in your plan. Your AI receptionist continues to work without
+              specified in your plan. Your AI voice agent continues to work without
               interruption.
             </p>
           </div>

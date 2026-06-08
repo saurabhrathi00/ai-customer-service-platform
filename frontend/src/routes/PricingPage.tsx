@@ -110,8 +110,8 @@ export default function PricingPage() {
           Simple, transparent pricing
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-          Your AI receptionist works 24/7, never takes a day off, and costs a fraction of a
-          human receptionist. Cancel anytime.
+          Your AI voice agent works 24/7, never takes a day off, and costs a fraction of
+          hiring staff. Cancel anytime.
         </p>
       </div>
 
@@ -128,10 +128,10 @@ export default function PricingPage() {
       )}
 
       <div className="mt-16 rounded-xl border bg-card/40 p-8 text-center">
-        <h2 className="text-2xl font-semibold">Still hiring a human receptionist?</h2>
+        <h2 className="text-2xl font-semibold">Still relying on staff to handle every call?</h2>
         <p className="mx-auto mt-2 max-w-xl text-muted-foreground">
-          An average receptionist costs &#8377;20,000+/month, works 8 hours, and takes leaves.
-          VoxHelperAI works 24/7 at a fraction of the cost with zero sick days.
+          Dedicated call staff costs &#8377;20,000+/month, works 8 hours, and takes leaves.
+          VoxAI works 24/7 at a fraction of the cost — answering calls, selling your services, and capturing leads.
         </p>
       </div>
 

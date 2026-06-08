@@ -65,7 +65,7 @@ export default function CheckoutPage() {
       const options = {
         key: data.razorpayKeyId,
         subscription_id: data.razorpaySubscriptionId,
-        name: 'VoxHelperAI',
+        name: 'VoxAI',
         description: `${plan.name} Plan - Monthly Subscription`,
         handler: () => {
           setSuccess(true);
@@ -107,7 +107,7 @@ export default function CheckoutPage() {
         </div>
         <h1 className="text-3xl font-bold">Payment Successful!</h1>
         <p className="mt-4 text-muted-foreground">
-          Thank you for subscribing to VoxHelperAI. Our team will set up your AI receptionist
+          Thank you for subscribing to VoxAI. Our team will set up your AI voice agent
           and contact you within 24 hours.
         </p>
         <Button className="mt-8" onClick={() => navigate('/login')}>

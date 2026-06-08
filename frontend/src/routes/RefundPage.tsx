@@ -10,7 +10,7 @@ export default function RefundPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">No Refund Policy</h2>
           <p className="mt-2">
-            VoxHelperAI operates on a <strong>no-refund policy</strong>. All payments made
+            VoxAI operates on a <strong>no-refund policy</strong>. All payments made
             for subscriptions are non-refundable. This includes monthly subscription fees,
             overage charges, and any other payments made through our platform.
           </p>
@@ -31,7 +31,7 @@ export default function RefundPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">Service Setup</h2>
           <p className="mt-2">
-            After payment, our team will set up your AI receptionist (phone number
+            After payment, our team will set up your AI voice agent (phone number
             allocation, channel configuration) within 24 hours. Once setup is complete,
             your service will go live.
           </p>

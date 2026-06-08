@@ -1,6 +1,6 @@
 export const COMPANY = {
-  name: 'VoxHelperAI',
-  tagline: 'AI Voice Receptionist for Indian Businesses',
+  name: 'VoxAI',
+  tagline: 'AI Voice Agent for Indian Businesses',
   phone: '+91-7982881768',
   phoneRaw: '+917982881768',
   email: 'support@voxhelperai.com',

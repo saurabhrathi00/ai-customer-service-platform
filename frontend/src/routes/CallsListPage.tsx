@@ -111,7 +111,7 @@ export default function CallsListPage() {
     <>
       <PageHeader
         title="Calls"
-        subtitle="Every conversation your AI receptionist has had."
+        subtitle="Every conversation your AI voice agent has had."
       />
       <PageBody className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

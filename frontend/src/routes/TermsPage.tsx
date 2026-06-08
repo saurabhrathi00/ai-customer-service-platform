@@ -8,8 +8,8 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">1. Introduction</h2>
           <p className="mt-2">
-            These Terms and Conditions govern your use of VoxHelperAI (&quot;Service&quot;),
-            an AI-powered voice receptionist platform operated by VoxHelperAI
+            These Terms and Conditions govern your use of VoxAI (&quot;Service&quot;),
+            an AI-powered voice agent platform operated by VoxAI
             (&quot;Company&quot;, &quot;we&quot;, &quot;us&quot;). By subscribing to or
             using the Service, you agree to be bound by these terms.
           </p>
@@ -18,10 +18,10 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">2. Service Description</h2>
           <p className="mt-2">
-            VoxHelperAI provides an AI voice receptionist that handles incoming calls for
-            your business, answers queries, books appointments, and provides post-call
-            summaries. The service operates 24/7 based on the knowledge and configuration
-            you provide.
+            VoxAI provides an AI voice agent that handles incoming calls for
+            your business — answering queries, promoting your services, capturing leads,
+            and providing post-call summaries. The service operates 24/7 based on the
+            knowledge and configuration you provide.
           </p>
         </section>
 
@@ -66,7 +66,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-semibold text-foreground">7. Limitation of Liability</h2>
           <p className="mt-2">
-            VoxHelperAI is an AI-based service and may not always provide perfectly
+            VoxAI is an AI-based service and may not always provide perfectly
             accurate responses. We are not liable for any business losses resulting from
             AI-generated responses, missed calls due to technical issues, or actions
             taken based on AI recommendations.

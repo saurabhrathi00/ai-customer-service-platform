@@ -85,7 +85,7 @@ export function PhoneNumbersCard() {
             <div>
               <CardTitle>Phone numbers</CardTitle>
               <CardDescription>
-                The phone numbers that route to your AI receptionist.
+                The phone numbers that route to your AI voice agent.
               </CardDescription>
             </div>
             <Button onClick={() => setOpen(true)}>
