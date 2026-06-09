@@ -29,14 +29,14 @@ class BaseBargeInHandlerTest {
 
     @Test
     void noBarge_whenBotNotSpeaking() {
-        assertFalse(handler.onFinal(session, "hello there", config));
+        assertFalse(handler.onFinal(session, "hello there friend", config));
     }
 
     @Test
     void noBarge_whenDisabled() {
         config.setEnabled(false);
         makeBotSpeaking(5000);
-        assertFalse(handler.onFinal(session, "hello there", config));
+        assertFalse(handler.onFinal(session, "hello there friend", config));
     }
 
     @Test
@@ -46,12 +46,13 @@ class BaseBargeInHandlerTest {
     }
 
     @Test
-    void noBarge_onBackchannel() {
+    void noBarge_whenTooFewWords() {
         makeBotSpeaking(5000);
-        assertFalse(handler.onFinal(session, "hmm", config));
+        assertFalse(handler.onFinal(session, "okay", config));
         assertFalse(handler.onFinal(session, "haan ji", config));
-        assertFalse(handler.onFinal(session, "ok", config));
-        assertFalse(handler.onFinal(session, "achha", config));
+        assertFalse(handler.onFinal(session, "hello", config));
+        assertFalse(handler.onFinal(session, "Okay.", config));
+        assertFalse(handler.onFinal(session, "han.", config));
     }
 
     @Test
@@ -91,21 +92,14 @@ class BaseBargeInHandlerTest {
     @Test
     void debounce_preventsRapidBargeIns() {
         makeBotSpeaking(10000);
-        assertTrue(handler.onFinal(session, "stop stop stop", config));
+        assertTrue(handler.onFinal(session, "stop stop stop please", config));
         makeBotSpeaking(10000);
-        assertFalse(handler.onFinal(session, "I said stop", config),
+        assertFalse(handler.onFinal(session, "I said stop now", config),
                 "second barge-in within debounce window should be rejected");
     }
 
     @Test
-    void multiWordBackchannel_isFiltered() {
-        makeBotSpeaking(5000);
-        assertFalse(handler.onFinal(session, "ok ok", config));
-        assertFalse(handler.onFinal(session, "haan theek", config));
-    }
-
-    @Test
-    void realSpeech_isNotBackchannel() {
+    void threeWordUtterance_barges() {
         makeBotSpeaking(5000);
         assertTrue(handler.onFinal(session, "mujhe price batao", config));
     }

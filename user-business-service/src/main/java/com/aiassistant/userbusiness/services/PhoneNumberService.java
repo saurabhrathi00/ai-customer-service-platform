@@ -53,32 +53,27 @@ public class PhoneNumberService {
     @Transactional
     public PhoneNumberResponse add(String businessId, AddPhoneNumberRequest request) {
         assertBusinessExists(businessId);
-        TelephonyProviderEntity provider = providerRepository.findBySlug(request.getProviderSlug())
+        String raw = request.getPhoneNumber();
+        if (raw != null && raw.startsWith("+")) {
+            raw = raw.substring(1);
+        }
+        final String phoneNumber = raw;
+
+        ProviderPhoneNumberEntity providerNumber = providerPhoneNumberRepository
+                .findByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new BusinessNotFoundException(
-                        "Unknown provider: " + request.getProviderSlug()));
-        String phoneNumber = request.getPhoneNumber();
-        if (phoneNumber != null && phoneNumber.startsWith("+")) {
-            phoneNumber = phoneNumber.substring(1);
+                        "Phone number not found in any provider inventory: " + phoneNumber));
+
+        if ("assigned".equals(providerNumber.getStatus())) {
+            throw new ConflictException("Phone number already registered: " + phoneNumber);
         }
 
-        ProviderPhoneNumberEntity providerNumber;
-        var existing = providerPhoneNumberRepository.findByPhoneNumber(phoneNumber);
-        if (existing.isPresent()) {
-            if ("assigned".equals(existing.get().getStatus())) {
-                throw new ConflictException("Phone number already registered: " + phoneNumber);
-            }
-            providerNumber = existing.get();
-            providerNumber.setStatus("assigned");
-            providerNumber.setProviderId(provider.getId());
-            providerNumber = providerPhoneNumberRepository.save(providerNumber);
-        } else {
-            providerNumber = ProviderPhoneNumberEntity.builder()
-                    .providerId(provider.getId())
-                    .phoneNumber(phoneNumber)
-                    .status("assigned")
-                    .build();
-            providerNumber = providerPhoneNumberRepository.save(providerNumber);
-        }
+        TelephonyProviderEntity provider = providerRepository.findById(providerNumber.getProviderId())
+                .orElseThrow(() -> new BusinessNotFoundException(
+                        "Provider not found for phone number: " + phoneNumber));
+
+        providerNumber.setStatus("assigned");
+        providerNumber = providerPhoneNumberRepository.save(providerNumber);
 
         BusinessPhoneNumberEntity link = BusinessPhoneNumberEntity.builder()
                 .businessId(businessId)

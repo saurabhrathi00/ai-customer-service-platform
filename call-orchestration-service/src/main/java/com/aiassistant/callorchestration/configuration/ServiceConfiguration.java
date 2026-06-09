@@ -63,10 +63,9 @@ public class ServiceConfiguration {
         private int partialMinTextLength = 6;
         /** Min words in partial to trigger Stage 1 pause. */
         private int partialMinWordCount = 2;
-        /** Min chars in partial for immediate full barge-in (skip Stage 2). */
-        private int immediateMinTextLength = 15;
-        /** Min words in partial for immediate full barge-in (skip Stage 2). */
-        private int immediateMinWordCount = 3;
+        /** Min words in a final transcript to confirm barge-in.
+         *  Anything shorter (1-2 words) is treated as backchannel/noise. */
+        private int finalMinWordCount = 3;
         /** Max ms to stay paused waiting for a final before auto-resuming. */
         private long pauseTimeoutMs = 3000;
     }

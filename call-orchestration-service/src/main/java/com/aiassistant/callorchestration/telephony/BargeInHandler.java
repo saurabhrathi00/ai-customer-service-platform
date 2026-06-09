@@ -20,7 +20,6 @@ public interface BargeInHandler {
 
     enum BargeInAction {
         NONE,
-        PAUSE,
-        IMMEDIATE
+        PAUSE
     }
 }

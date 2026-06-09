@@ -53,12 +53,8 @@ public class SttCallbackHandler implements Consumer<TranscriptEvent> {
 
         if (!sttEvent.isFinal()) {
             if (bargeInHandler != null && serviceConfiguration != null) {
-                BargeInHandler.BargeInAction action = bargeInHandler.onPartial(
+                bargeInHandler.onPartial(
                         session, text.trim(), serviceConfiguration.getBargeIn());
-                if (action == BargeInHandler.BargeInAction.IMMEDIATE) {
-                    log.info("[stt] immediate barge-in on partial callId={} text=\"{}\"",
-                            session.getCallId(), text.trim());
-                }
             }
             return;
         }

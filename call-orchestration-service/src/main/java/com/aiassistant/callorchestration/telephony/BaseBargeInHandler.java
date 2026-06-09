@@ -12,11 +12,6 @@ public class BaseBargeInHandler implements BargeInHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BaseBargeInHandler.class);
 
-    private static final Set<String> BACKCHANNEL_WORDS = Set.of(
-            "hmm", "hm", "mm", "uh", "um", "ok", "okay",
-            "haan", "ha", "haan ji", "achha", "accha", "theek",
-            "yes", "no", "nahi", "ji");
-
     @Override
     public void clearCarrierBuffer(CallSession session) {
     }
@@ -49,8 +44,6 @@ public class BaseBargeInHandler implements BargeInHandler {
         String[] words = trimmed.split("\\s+");
         if (words.length < config.getPartialMinWordCount()) return BargeInAction.NONE;
 
-        if (isBackchannel(trimmed)) return BargeInAction.NONE;
-
         long now = System.currentTimeMillis();
 
         long botStart = session.getBotSpeakingStartMs();
@@ -61,15 +54,7 @@ public class BaseBargeInHandler implements BargeInHandler {
 
         if (now - session.getLastBargeInMs() < config.getDebounceMs()) return BargeInAction.NONE;
 
-        if (trimmed.length() >= config.getImmediateMinTextLength()
-                && words.length >= config.getImmediateMinWordCount()) {
-            log.info("[barge-in] IMMEDIATE callId={} partial=\"{}\" remaining={}ms",
-                    session.getCallId(), trimmed, remainingMs);
-            executeBargeIn(session, trimmed, remainingMs, now);
-            return BargeInAction.IMMEDIATE;
-        }
-
-        log.info("[barge-in] STAGE1-PAUSE callId={} partial=\"{}\" remaining={}ms",
+        log.info("[barge-in] PAUSE callId={} partial=\"{}\" remaining={}ms",
                 session.getCallId(), trimmed, remainingMs);
         session.setBargeInStage(CallSession.BargeInStage.PAUSED);
         session.setBargeInPausedAtMs(now);
@@ -91,10 +76,11 @@ public class BaseBargeInHandler implements BargeInHandler {
             session.setBargeInPausedAtMs(0);
 
             String resumeReason = null;
+            int wordCount = trimmed.split("\\s+").length;
             if (trimmed.length() < config.getMinTextLength()) {
                 resumeReason = "short";
-            } else if (isBackchannel(trimmed)) {
-                resumeReason = "backchannel";
+            } else if (wordCount < config.getFinalMinWordCount()) {
+                resumeReason = "few-words";
             } else if (isEchoOfBotSpeech(session, trimmed)) {
                 resumeReason = "echo";
             }
@@ -118,8 +104,8 @@ public class BaseBargeInHandler implements BargeInHandler {
 
         if (trimmed.length() < config.getMinTextLength()) return false;
 
-        if (isBackchannel(trimmed)) {
-            log.debug("[barge-in] SKIP-BACKCHANNEL callId={} text=\"{}\"",
+        if (trimmed.split("\\s+").length < config.getFinalMinWordCount()) {
+            log.debug("[barge-in] SKIP-FEW-WORDS callId={} text=\"{}\"",
                     session.getCallId(), trimmed);
             return false;
         }
@@ -155,14 +141,6 @@ public class BaseBargeInHandler implements BargeInHandler {
         session.setLastBargeInMs(now);
         session.setBargeInStage(CallSession.BargeInStage.NONE);
         session.setBargeInPausedAtMs(0);
-    }
-
-    static boolean isBackchannel(String text) {
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        if (BACKCHANNEL_WORDS.contains(lower)) return true;
-        String[] words = lower.split("\\s+");
-        return words.length <= 2
-                && java.util.Arrays.stream(words).allMatch(BACKCHANNEL_WORDS::contains);
     }
 
     private static final double ECHO_SIMILARITY_THRESHOLD = 0.5;

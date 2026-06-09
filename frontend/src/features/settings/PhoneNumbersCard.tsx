@@ -179,7 +179,6 @@ function AddDialog({
     mutationFn: (v: Values) =>
       business.addPhoneNumber(businessId, {
         phoneNumber: normalizeForStorage(v.phoneNumber),
-        providerSlug: 'exotel',
         label: v.label,
       }),
     onSuccess: () => {
