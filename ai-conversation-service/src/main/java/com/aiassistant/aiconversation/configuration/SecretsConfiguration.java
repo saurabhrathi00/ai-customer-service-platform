@@ -40,6 +40,7 @@ public class SecretsConfiguration {
     public static class Llm {
         private Anthropic anthropic;
         private Gemini gemini;
+        private Groq groq;
         private Map<String, Map<String, String>> extra;
     }
 
@@ -53,6 +54,13 @@ public class SecretsConfiguration {
 
     @Data
     public static class Gemini {
+        private String apiKey;
+        private String model;
+        private String baseUrl;
+    }
+
+    @Data
+    public static class Groq {
         private String apiKey;
         private String model;
         private String baseUrl;
