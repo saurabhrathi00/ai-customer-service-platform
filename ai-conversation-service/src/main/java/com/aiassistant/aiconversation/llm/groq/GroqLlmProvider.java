@@ -124,14 +124,16 @@ public class GroqLlmProvider implements LlmProvider {
             return req.getModelOverride();
         }
         if (creds.getModel() == null || creds.getModel().isBlank()) {
-            return "qwen-qwq-32b";
+            throw new LlmException("PROVIDER_NOT_CONFIGURED", "Groq model not configured (secrets.llm.groq.model)");
         }
         return creds.getModel();
     }
 
     private ObjectNode buildBody(LlmRequest req) {
         ObjectNode body = mapper.createObjectNode();
-        body.put("model", modelOf(req));
+        String model = modelOf(req);
+        log.info("[groq] using model={} credsModel={}", model, creds == null ? "null" : creds.getModel());
+        body.put("model", model);
         body.put("max_tokens", req.getMaxOutputTokens() != null ? req.getMaxOutputTokens()
                 : llmCfg.getMaxOutputTokens());
         body.put("temperature", req.getTemperature() != null ? req.getTemperature()
