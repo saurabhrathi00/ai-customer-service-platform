@@ -136,7 +136,9 @@ public class GeminiLlmProvider implements LlmProvider {
     private ObjectNode buildBody(LlmRequest req) {
         ObjectNode body = mapper.createObjectNode();
 
-        if (req.getSystemPrompt() != null && !req.getSystemPrompt().isBlank()) {
+        if (req.getCachedContentName() != null && !req.getCachedContentName().isBlank()) {
+            body.put("cachedContent", req.getCachedContentName());
+        } else if (req.getSystemPrompt() != null && !req.getSystemPrompt().isBlank()) {
             ObjectNode sys = body.putObject("system_instruction");
             sys.putArray("parts").addObject().put("text", req.getSystemPrompt());
         }

@@ -59,6 +59,7 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
     private final ServiceConfiguration serviceConfiguration;
     private final SystemPromptBuilder promptBuilder;
     private final com.aiassistant.aiconversation.services.ConversationHistoryService historyService;
+    private final com.aiassistant.aiconversation.llm.gemini.GeminiContextCacheService geminiContextCacheService;
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession ws) {
@@ -307,8 +308,15 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         session.resetUnclearStreak();
 
         ServiceConfiguration.Llm cfg = serviceConfiguration.getLlm();
+        String renderedPrompt = promptBuilder.build(session.getKnowledge());
+        String cachedContentName = null;
+        if (cfg.isPromptCacheEnabled() && "gemini".equals(session.getProvider().id())) {
+            cachedContentName = geminiContextCacheService.resolveCache(
+                    session.getBusinessId(), renderedPrompt);
+        }
         LlmRequest req = LlmRequest.builder()
-                .systemPrompt(promptBuilder.build(session.getKnowledge()))
+                .systemPrompt(cachedContentName != null ? null : renderedPrompt)
+                .cachedContentName(cachedContentName)
                 .messages(session.snapshotMessages(cfg.getHistoryWindowTurns()))
                 .maxOutputTokens(cfg.getMaxOutputTokens())
                 .temperature(cfg.getTemperature())

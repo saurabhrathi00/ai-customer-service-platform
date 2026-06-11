@@ -15,5 +15,6 @@ public class LlmRequest {
     Integer maxOutputTokens;
     Double temperature;
     Boolean cacheSystemPrompt;
+    String cachedContentName;
     String modelOverride;
 }

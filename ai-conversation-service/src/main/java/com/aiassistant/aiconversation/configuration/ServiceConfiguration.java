@@ -47,6 +47,8 @@ public class ServiceConfiguration {
         private int streamingTimeoutSeconds;
         private int historyWindowTurns;
         private boolean promptCacheEnabled;
+        private int promptCacheTtlSeconds = 3600;
+        private int promptCacheRefreshThresholdSeconds = 900;
         private int stallTimeoutSeconds;
         private int retryMaxAttempts;
         private long retryInitialBackoffMs;
