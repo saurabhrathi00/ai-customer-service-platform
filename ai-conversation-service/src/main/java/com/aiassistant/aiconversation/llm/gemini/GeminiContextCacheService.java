@@ -97,18 +97,21 @@ public class GeminiContextCacheService {
 
             // Miss — coalesce concurrent creations
             String cacheKey = businessId + ":" + hash;
+            boolean[] creator = {false};
             CompletableFuture<String> future = inFlight.computeIfAbsent(cacheKey, k -> {
-                CompletableFuture<String> f = new CompletableFuture<>();
+                creator[0] = true;
+                return new CompletableFuture<>();
+            });
+            if (creator[0]) {
                 try {
                     String name = createCache(businessId, renderedSystemPrompt, hash, currentModel, existing, cfg);
-                    f.complete(name);
+                    future.complete(name);
                 } catch (Exception e) {
-                    f.completeExceptionally(e);
+                    future.completeExceptionally(e);
                 } finally {
                     inFlight.remove(cacheKey);
                 }
-                return f;
-            });
+            }
             return future.get(10, TimeUnit.SECONDS);
 
         } catch (Exception e) {
