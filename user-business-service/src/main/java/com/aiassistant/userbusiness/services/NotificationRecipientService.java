@@ -1,6 +1,5 @@
 package com.aiassistant.userbusiness.services;
 
-import com.aiassistant.userbusiness.exceptions.AppException;
 import com.aiassistant.userbusiness.exceptions.BusinessNotFoundException;
 import com.aiassistant.userbusiness.exceptions.ConflictException;
 import com.aiassistant.userbusiness.models.dao.BusinessNotificationRecipientEntity;
@@ -11,7 +10,6 @@ import com.aiassistant.userbusiness.repository.BusinessRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,7 +76,7 @@ public class NotificationRecipientService {
     public void delete(String businessId, String recipientId) {
         BusinessNotificationRecipientEntity entity = repository
                 .findByIdAndBusinessId(recipientId, businessId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND,
+                .orElseThrow(() -> new BusinessNotFoundException(
                         "Recipient " + recipientId + " not found for business " + businessId));
         repository.delete(entity);
         log.info("Notification recipient removed businessId={} recipientId={}", businessId, recipientId);
