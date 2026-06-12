@@ -181,6 +181,11 @@ public class GeminiLlmProvider implements LlmProvider {
                 : llmCfg.getMaxOutputTokens());
         gc.put("temperature", req.getTemperature() != null ? req.getTemperature()
                 : llmCfg.getTemperature());
+        // Disable thinking mode. Gemini 2.5 flash counts thinking tokens against
+        // maxOutputTokens; for short voice replies the budget gets consumed by
+        // thoughts and the model returns empty text with finishReason=MAX_TOKENS.
+        // We always want direct answers — no internal deliberation.
+        gc.putObject("thinkingConfig").put("thinkingBudget", 0);
         return body;
     }
 
