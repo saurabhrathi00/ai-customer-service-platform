@@ -101,6 +101,14 @@
 			<version>${ulid.version}</version>
 		</dependency>
 
+		<!-- Vertex AI auth: signs JWTs from service-account JSON and mints OAuth2
+		     access tokens that auto-refresh before expiry. -->
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.24.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

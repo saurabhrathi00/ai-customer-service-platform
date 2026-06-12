@@ -32,21 +32,26 @@ public class GeminiLlmProvider implements LlmProvider {
     private static final String ID = "gemini";
     private static final String DEFAULT_BASE = "https://generativelanguage.googleapis.com";
 
-    private final WebClient webClient;
+    private final WebClient aiStudioClient;
+    private final WebClient vertexClient;
     private final ObjectMapper mapper;
     private final SecretsConfiguration.Gemini creds;
     private final ServiceConfiguration.Llm llmCfg;
+    private final VertexAiTokenProvider vertex;
 
     public GeminiLlmProvider(WebClient.Builder builder,
                              ObjectMapper mapper,
                              SecretsConfiguration secrets,
-                             ServiceConfiguration serviceCfg) {
+                             ServiceConfiguration serviceCfg,
+                             VertexAiTokenProvider vertex) {
         this.mapper = mapper;
         this.creds = secrets.getLlm() == null ? null : secrets.getLlm().getGemini();
         this.llmCfg = serviceCfg.getLlm();
-        String baseUrl = (creds == null || creds.getBaseUrl() == null || creds.getBaseUrl().isBlank())
+        this.vertex = vertex;
+        String aiStudioBase = (creds == null || creds.getBaseUrl() == null || creds.getBaseUrl().isBlank())
                 ? DEFAULT_BASE : creds.getBaseUrl();
-        this.webClient = builder.baseUrl(baseUrl).build();
+        this.aiStudioClient = builder.baseUrl(aiStudioBase).build();
+        this.vertexClient = vertex.isEnabled() ? builder.baseUrl(vertex.baseUrl()).build() : null;
     }
 
     @Override public String id() { return ID; }
@@ -61,13 +66,22 @@ public class GeminiLlmProvider implements LlmProvider {
         ParameterizedTypeReference<ServerSentEvent<String>> sseType =
                 new ParameterizedTypeReference<>() {};
 
-        return webClient.post()
-                .uri(b -> b.path("/v1beta/models/{model}:streamGenerateContent")
-                        .queryParam("alt", "sse")
-                        .queryParam("key", creds.getApiKey())
-                        .build(model))
+        WebClient client = vertex.isEnabled() ? vertexClient : aiStudioClient;
+        return client.post()
+                .uri(b -> {
+                    if (vertex.isEnabled()) {
+                        return b.path("/v1/projects/{p}/locations/{r}/publishers/google/models/{m}:streamGenerateContent")
+                                .queryParam("alt", "sse")
+                                .build(vertex.projectId(), vertex.region(), model);
+                    }
+                    return b.path("/v1beta/models/{model}:streamGenerateContent")
+                            .queryParam("alt", "sse")
+                            .queryParam("key", creds.getApiKey())
+                            .build(model);
+                })
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE)
+                .headers(h -> { if (vertex.isEnabled()) h.setBearerAuth(vertex.accessToken()); })
                 .bodyValue(body)
                 .retrieve()
                 .bodyToFlux(sseType)
@@ -85,11 +99,19 @@ public class GeminiLlmProvider implements LlmProvider {
         ObjectNode body = buildBody(request);
 
         try {
-            JsonNode resp = webClient.post()
-                    .uri(b -> b.path("/v1beta/models/{model}:generateContent")
-                            .queryParam("key", creds.getApiKey())
-                            .build(model))
+            WebClient client = vertex.isEnabled() ? vertexClient : aiStudioClient;
+            JsonNode resp = client.post()
+                    .uri(b -> {
+                        if (vertex.isEnabled()) {
+                            return b.path("/v1/projects/{p}/locations/{r}/publishers/google/models/{m}:generateContent")
+                                    .build(vertex.projectId(), vertex.region(), model);
+                        }
+                        return b.path("/v1beta/models/{model}:generateContent")
+                                .queryParam("key", creds.getApiKey())
+                                .build(model);
+                    })
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .headers(h -> { if (vertex.isEnabled()) h.setBearerAuth(vertex.accessToken()); })
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(JsonNode.class)
@@ -118,6 +140,7 @@ public class GeminiLlmProvider implements LlmProvider {
     }
 
     private void requireConfigured() {
+        if (vertex.isEnabled()) return;
         if (creds == null || creds.getApiKey() == null || creds.getApiKey().isBlank()) {
             throw new LlmException("PROVIDER_NOT_CONFIGURED", "Gemini API key not configured");
         }

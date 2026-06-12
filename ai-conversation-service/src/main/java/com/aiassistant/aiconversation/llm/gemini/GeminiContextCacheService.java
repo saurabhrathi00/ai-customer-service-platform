@@ -37,6 +37,7 @@ public class GeminiContextCacheService {
     private final SecretsConfiguration secrets;
     private final ServiceConfiguration serviceConfiguration;
     private final WebClient.Builder webClientBuilder;
+    private final VertexAiTokenProvider vertex;
 
     private volatile WebClient webClient;
     private final ConcurrentHashMap<String, CompletableFuture<String>> inFlight = new ConcurrentHashMap<>();
@@ -45,9 +46,14 @@ public class GeminiContextCacheService {
         if (webClient == null) {
             synchronized (this) {
                 if (webClient == null) {
-                    SecretsConfiguration.Gemini creds = geminiCreds();
-                    String base = (creds == null || creds.getBaseUrl() == null || creds.getBaseUrl().isBlank())
-                            ? DEFAULT_BASE : creds.getBaseUrl();
+                    String base;
+                    if (vertex.isEnabled()) {
+                        base = vertex.baseUrl();
+                    } else {
+                        SecretsConfiguration.Gemini creds = geminiCreds();
+                        base = (creds == null || creds.getBaseUrl() == null || creds.getBaseUrl().isBlank())
+                                ? DEFAULT_BASE : creds.getBaseUrl();
+                    }
                     webClient = webClientBuilder.baseUrl(base).build();
                 }
             }
@@ -73,7 +79,7 @@ public class GeminiContextCacheService {
     public String resolveCache(String businessId, String renderedSystemPrompt) {
         ServiceConfiguration.Llm cfg = serviceConfiguration.getLlm();
         if (!cfg.isPromptCacheEnabled()) return null;
-        if (apiKey() == null) return null;
+        if (!vertex.isEnabled() && apiKey() == null) return null;
 
         try {
             String hash = sha256(renderedSystemPrompt);
@@ -130,21 +136,32 @@ public class GeminiContextCacheService {
         }
 
         ObjectNode body = mapper.createObjectNode();
-        body.put("model", "models/" + currentModel);
+        // Vertex expects the full resource path for model; AI Studio expects "models/{m}".
+        body.put("model", vertex.isEnabled()
+                ? String.format("projects/%s/locations/%s/publishers/google/models/%s",
+                    vertex.projectId(), vertex.region(), currentModel)
+                : "models/" + currentModel);
 
         ObjectNode sysInstruction = body.putObject("systemInstruction");
         sysInstruction.putArray("parts").addObject().put("text", renderedSystemPrompt);
 
         body.put("ttl", cfg.getPromptCacheTtlSeconds() + "s");
 
-        log.info("[gemini-cache] CREATING businessId={} model={} ttl={}s",
-                businessId, currentModel, cfg.getPromptCacheTtlSeconds());
+        log.info("[gemini-cache] CREATING businessId={} model={} ttl={}s vertex={}",
+                businessId, currentModel, cfg.getPromptCacheTtlSeconds(), vertex.isEnabled());
 
         JsonNode resp = webClient().post()
-                .uri(b -> b.path("/v1beta/cachedContents")
-                        .queryParam("key", apiKey())
-                        .build())
+                .uri(b -> {
+                    if (vertex.isEnabled()) {
+                        return b.path("/v1beta1/projects/{p}/locations/{r}/cachedContents")
+                                .build(vertex.projectId(), vertex.region());
+                    }
+                    return b.path("/v1beta/cachedContents")
+                            .queryParam("key", apiKey())
+                            .build();
+                })
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .headers(h -> { if (vertex.isEnabled()) h.setBearerAuth(vertex.accessToken()); })
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
@@ -179,11 +196,18 @@ public class GeminiContextCacheService {
             ObjectNode body = mapper.createObjectNode();
             body.put("ttl", ttlSeconds + "s");
 
+            // cacheName comes back from the API in the right shape per provider
+            // (AI Studio: "cachedContents/abc"; Vertex: "projects/.../cachedContents/abc"),
+            // we just prefix the right API version.
+            String prefix = vertex.isEnabled() ? "/v1beta1/" : "/v1beta/";
             JsonNode resp = webClient().patch()
-                    .uri(b -> b.path("/v1beta/{cacheName}")
-                            .queryParam("key", apiKey())
-                            .build(cacheName))
+                    .uri(b -> {
+                        var u = b.path(prefix + "{cacheName}");
+                        if (!vertex.isEnabled()) u = u.queryParam("key", apiKey());
+                        return u.build(cacheName);
+                    })
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .headers(h -> { if (vertex.isEnabled()) h.setBearerAuth(vertex.accessToken()); })
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(JsonNode.class)
@@ -205,10 +229,14 @@ public class GeminiContextCacheService {
 
     private void deleteRemoteCache(String cacheName) {
         try {
+            String prefix = vertex.isEnabled() ? "/v1beta1/" : "/v1beta/";
             webClient().delete()
-                    .uri(b -> b.path("/v1beta/{cacheName}")
-                            .queryParam("key", apiKey())
-                            .build(cacheName))
+                    .uri(b -> {
+                        var u = b.path(prefix + "{cacheName}");
+                        if (!vertex.isEnabled()) u = u.queryParam("key", apiKey());
+                        return u.build(cacheName);
+                    })
+                    .headers(h -> { if (vertex.isEnabled()) h.setBearerAuth(vertex.accessToken()); })
                     .retrieve()
                     .toBodilessEntity()
                     .timeout(Duration.ofSeconds(5))

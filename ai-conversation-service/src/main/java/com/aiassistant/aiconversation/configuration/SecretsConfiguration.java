@@ -57,6 +57,15 @@ public class SecretsConfiguration {
         private String apiKey;
         private String model;
         private String baseUrl;
+        private Vertex vertex;
+    }
+
+    @Data
+    public static class Vertex {
+        private boolean enabled;
+        private String projectId;
+        private String region;
+        private String credentialsPath;
     }
 
     @Data

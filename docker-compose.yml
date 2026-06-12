@@ -133,6 +133,7 @@ services:
       CONFIGS_AUTHSERVICE_BASEURL: http://auth-service:8081/auth-service
     volumes:
       - /etc/secrets/ai-conversation-service/secrets.properties:/etc/secrets/secrets.properties:ro
+      - /etc/secrets/ai-conversation-service/gcp-sa.json:/etc/secrets/gcp-sa.json:ro
     networks:
       - backend
     depends_on:
