@@ -48,6 +48,9 @@ public class LeadResponse {
      *  scheduler always reads the current value. */
     String businessName;
     String ownerWhatsappNumber;
+    /** Active additional recipients beyond the primary owner number. The
+     *  same template is sent to each. May be null/empty. */
+    List<String> additionalWhatsappNumbers;
 
     Instant ownerNotifiedAt;
     Instant customerNotifiedAt;

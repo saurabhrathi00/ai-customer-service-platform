@@ -13,6 +13,7 @@ import type {
   FreeformResponse,
   LeadNotificationSettingsResponse,
   LeadResponse,
+  NotificationRecipientResponse,
   PhoneNumberResponse,
   PlanResponse,
   ProfileResponse,
@@ -62,6 +63,21 @@ export const business = {
 
   removePhoneNumber: (id: string, numberId: string) =>
     businessApi.delete<void>(`/business/${id}/phone-numbers/${numberId}`).then((r) => r.data),
+
+  notificationRecipients: (id: string) =>
+    businessApi
+      .get<NotificationRecipientResponse[]>(`/business/${id}/notification-recipients`)
+      .then((r) => r.data),
+
+  addNotificationRecipient: (id: string, input: { whatsappNumber: string; label?: string }) =>
+    businessApi
+      .post<NotificationRecipientResponse>(`/business/${id}/notification-recipients`, input)
+      .then((r) => r.data),
+
+  removeNotificationRecipient: (id: string, recipientId: string) =>
+    businessApi
+      .delete<void>(`/business/${id}/notification-recipients/${recipientId}`)
+      .then((r) => r.data),
 
   ratingConfig: (id: string) =>
     businessApi.get<RatingConfigResponse>(`/business/${id}/rating-config`).then((r) => r.data),

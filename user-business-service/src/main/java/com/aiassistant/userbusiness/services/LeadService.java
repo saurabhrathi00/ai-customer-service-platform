@@ -10,6 +10,7 @@ import com.aiassistant.userbusiness.models.dao.LeadEntity;
 import com.aiassistant.userbusiness.models.dao.LeadNotificationSettingsEntity;
 import com.aiassistant.userbusiness.models.request.CreateLeadRequest;
 import com.aiassistant.userbusiness.models.response.LeadResponse;
+import com.aiassistant.userbusiness.repository.BusinessNotificationRecipientRepository;
 import com.aiassistant.userbusiness.repository.BusinessRepository;
 import com.aiassistant.userbusiness.repository.LeadRepository;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class LeadService {
 
     private final LeadRepository repository;
     private final BusinessRepository businessRepository;
+    private final BusinessNotificationRecipientRepository recipientRepository;
     private final LeadNotificationSettingsService settingsService;
 
     /**
@@ -261,9 +263,14 @@ public class LeadService {
         // N+1 fetch of business context. Acceptable at MVP scale (leads
         // counts are small); switch to a join projection if it bites.
         var business = businessRepository.findById(e.getBusinessId()).orElse(null);
+        var additional = recipientRepository
+                .findAllByBusinessIdAndIsActiveTrue(e.getBusinessId()).stream()
+                .map(r -> r.getWhatsappNumber())
+                .toList();
         return LeadResponse.builder()
                 .businessName(business == null ? null : business.getName())
                 .ownerWhatsappNumber(business == null ? null : business.getWhatsappNumber())
+                .additionalWhatsappNumbers(additional)
                 .ownerNotifiedAt(e.getOwnerNotifiedAt())
                 .customerNotifiedAt(e.getCustomerNotifiedAt())
                 .id(e.getId())

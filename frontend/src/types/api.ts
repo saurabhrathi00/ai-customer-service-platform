@@ -37,6 +37,14 @@ export interface PhoneNumberResponse {
   createdAt: string;
 }
 
+export interface NotificationRecipientResponse {
+  id: string;
+  whatsappNumber: string;
+  label: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export type RatingSignalKey =
   | 'LONG_CALL'
   | 'POSITIVE_FEEDBACK'

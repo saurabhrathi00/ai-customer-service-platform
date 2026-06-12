@@ -1,6 +1,7 @@
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { BusinessProfileCard } from '@/features/settings/BusinessProfileCard';
 import { ChangePasswordCard } from '@/features/settings/ChangePasswordCard';
+import { NotificationRecipientsCard } from '@/features/settings/NotificationRecipientsCard';
 import { PhoneNumbersCard } from '@/features/settings/PhoneNumbersCard';
 import { RatingConfigCard } from '@/features/settings/RatingConfigCard';
 import { SubscriptionCard } from '@/features/settings/SubscriptionCard';
@@ -16,6 +17,7 @@ export default function SettingsPage() {
         <BusinessProfileCard />
         <SubscriptionCard />
         <PhoneNumbersCard />
+        <NotificationRecipientsCard />
         <ChangePasswordCard />
         <div className="lg:col-span-2">
           <RatingConfigCard />

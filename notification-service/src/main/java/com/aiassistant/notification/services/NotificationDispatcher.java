@@ -37,52 +37,71 @@ public class NotificationDispatcher {
 
     /** Owner ping the moment a NEW lead lands. */
     public void notifyOwnerOfNewLead(LeadDto lead) {
-        String to = lead.getOwnerWhatsappNumber();
-        if (to == null || to.isBlank()) {
+        List<String> recipients = collectOwnerRecipients(lead);
+        if (recipients.isEmpty()) {
             log.warn("[notify] owner WA missing for businessId={} leadId={}; marking as notified to avoid loop",
                     lead.getBusinessId(), lead.getId());
             ubsClient.markOwnerNotified(lead.getId());
             return;
         }
-        try {
-            whatsApp.sendTemplate(
-                    to,
-                    config.getWhatsapp().getOwnerNewLeadTemplate(),
-                    List.of(
-                            nullSafe(lead.getCustomerName(), "Unknown"),
-                            nullSafe(lead.getCustomerPhone(), "no phone"),
-                            humanLeadType(lead.getLeadType()),
-                            nullSafe(lead.getSummary(), "(no summary)")),
-                    lead.getId());      // dashboard deep-link suffix
-            ubsClient.markOwnerNotified(lead.getId());
-        } catch (Exception ex) {
-            log.error("[notify] owner-new-lead failed leadId={}: {}", lead.getId(), ex.getMessage());
-        }
+        boolean anySuccess = sendOwnerTemplate(lead, recipients, "owner-new-lead");
+        if (anySuccess) ubsClient.markOwnerNotified(lead.getId());
     }
 
     /** Reminder while the lead is still NEW. */
     public void sendReminderToOwner(LeadDto lead) {
-        String to = lead.getOwnerWhatsappNumber();
-        if (to == null || to.isBlank()) {
+        List<String> recipients = collectOwnerRecipients(lead);
+        if (recipients.isEmpty()) {
             log.warn("[notify] owner WA missing leadId={}; skipping reminder", lead.getId());
             ubsClient.markReminderSent(lead.getId());  // still bump counter so we don't spin
             return;
         }
-        try {
-            // Same template — Meta treats it as a fresh send.
-            whatsApp.sendTemplate(
-                    to,
-                    config.getWhatsapp().getOwnerNewLeadTemplate(),
-                    List.of(
-                            nullSafe(lead.getCustomerName(), "Unknown"),
-                            nullSafe(lead.getCustomerPhone(), "no phone"),
-                            humanLeadType(lead.getLeadType()),
-                            nullSafe(lead.getSummary(), "(no summary)")),
-                    lead.getId());
-            ubsClient.markReminderSent(lead.getId());
-        } catch (Exception ex) {
-            log.error("[notify] reminder failed leadId={}: {}", lead.getId(), ex.getMessage());
+        boolean anySuccess = sendOwnerTemplate(lead, recipients, "reminder");
+        if (anySuccess) ubsClient.markReminderSent(lead.getId());
+    }
+
+    /** Union of primary owner number + active additional recipients, de-duped
+     *  in case the owner accidentally added their primary as a recipient. */
+    private List<String> collectOwnerRecipients(LeadDto lead) {
+        List<String> out = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String primary = lead.getOwnerWhatsappNumber();
+        if (primary != null && !primary.isBlank() && seen.add(primary)) {
+            out.add(primary);
         }
+        List<String> additional = lead.getAdditionalWhatsappNumbers();
+        if (additional != null) {
+            for (String n : additional) {
+                if (n != null && !n.isBlank() && seen.add(n)) out.add(n);
+            }
+        }
+        return out;
+    }
+
+    /** Send the owner-new-lead template to every recipient. We swallow per-recipient
+     *  failures so one bad number doesn't block the others; mark-as-notified fires
+     *  if at least one send succeeded. */
+    private boolean sendOwnerTemplate(LeadDto lead, List<String> recipients, String kind) {
+        List<String> params = List.of(
+                nullSafe(lead.getCustomerName(), "Unknown"),
+                nullSafe(lead.getCustomerPhone(), "no phone"),
+                humanLeadType(lead.getLeadType()),
+                nullSafe(lead.getSummary(), "(no summary)"));
+        boolean anySuccess = false;
+        for (String to : recipients) {
+            try {
+                whatsApp.sendTemplate(
+                        to,
+                        config.getWhatsapp().getOwnerNewLeadTemplate(),
+                        params,
+                        lead.getId());      // dashboard deep-link suffix
+                anySuccess = true;
+            } catch (Exception ex) {
+                log.error("[notify] {} failed leadId={} to={}: {}",
+                        kind, lead.getId(), to, ex.getMessage());
+            }
+        }
+        return anySuccess;
     }
 
     /** Customer-facing message after the owner decided. IGNORED never reaches here. */
