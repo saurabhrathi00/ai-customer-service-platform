@@ -25,14 +25,14 @@ const mobileSchema = z.object({
     .min(1, 'Phone number is required')
     .refine((v) => {
       const digits = v.replace(/[\s\-()]/g, '');
-      // +91XXXXXXXXXX or 91XXXXXXXXXX (with country code)
+      // Indian formats (kept for back-compat: bare 10-digit, local 0-prefix, +91)
       if (/^\+?91[6-9]\d{9}$/.test(digits)) return true;
-      // 0XXXXXXXXXX (local dialing)
       if (/^0[6-9]\d{9}$/.test(digits)) return true;
-      // XXXXXXXXXX (10 digit mobile starting with 6-9)
       if (/^[6-9]\d{9}$/.test(digits)) return true;
+      // International E.164: + followed by 8–15 digits, country code starts with 1-9
+      if (/^\+[1-9]\d{7,14}$/.test(digits)) return true;
       return false;
-    }, 'Enter a valid 10-digit mobile number (starting with 6-9)'),
+    }, 'Enter a valid phone number (Indian 10-digit or international with +country code)'),
   label: z.string().max(100).optional(),
 });
 
@@ -235,7 +235,7 @@ function AddDialog({
               {...form.register('phoneNumber')}
             />
             <p className="text-xs text-muted-foreground">
-              {phoneType === 'mobile' ? '10-digit mobile number' : 'Landline with STD code (e.g. 01141186129)'}
+              {phoneType === 'mobile' ? '10-digit Indian mobile, or international with +country code (e.g. +17629201298)' : 'Landline with STD code (e.g. 01141186129)'}
             </p>
             {form.formState.errors.phoneNumber && (
               <p className="text-xs text-destructive">
