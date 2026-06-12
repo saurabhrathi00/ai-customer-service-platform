@@ -153,7 +153,7 @@ public class GeminiContextCacheService {
         JsonNode resp = webClient().post()
                 .uri(b -> {
                     if (vertex.isEnabled()) {
-                        return b.path("/v1beta1/projects/{p}/locations/{r}/cachedContents")
+                        return b.path("/v1/projects/{p}/locations/{r}/cachedContents")
                                 .build(vertex.projectId(), vertex.region());
                     }
                     return b.path("/v1beta/cachedContents")
@@ -199,7 +199,7 @@ public class GeminiContextCacheService {
             // cacheName comes back from the API in the right shape per provider
             // (AI Studio: "cachedContents/abc"; Vertex: "projects/.../cachedContents/abc"),
             // we just prefix the right API version.
-            String prefix = vertex.isEnabled() ? "/v1beta1/" : "/v1beta/";
+            String prefix = vertex.isEnabled() ? "/v1/" : "/v1beta/";
             JsonNode resp = webClient().patch()
                     .uri(b -> {
                         var u = b.path(prefix + "{cacheName}");
@@ -229,7 +229,7 @@ public class GeminiContextCacheService {
 
     private void deleteRemoteCache(String cacheName) {
         try {
-            String prefix = vertex.isEnabled() ? "/v1beta1/" : "/v1beta/";
+            String prefix = vertex.isEnabled() ? "/v1/" : "/v1beta/";
             webClient().delete()
                     .uri(b -> {
                         var u = b.path(prefix + "{cacheName}");
