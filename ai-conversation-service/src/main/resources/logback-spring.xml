@@ -20,6 +20,8 @@
         </encoder>
     </appender>
 
+    <logger name="com.aiassistant.aiconversation.ws.ConversationWebSocketHandler" level="DEBUG"/>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
