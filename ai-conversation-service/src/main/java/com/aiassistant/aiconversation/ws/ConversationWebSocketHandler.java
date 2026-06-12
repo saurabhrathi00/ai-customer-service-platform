@@ -448,32 +448,49 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
         // Mid-stream sentinel guard. Model sometimes emits "ack.HANGUP|bye"
         // instead of just "HANGUP|bye" — without this check we'd happily
         // stream the literal word "HANGUP" to TTS.
+        // Also handle the model violating format entirely: "farewell text. HANGUP"
+        // (bare keyword with no pipe). In that case treat already-streamed text
+        // as the farewell and just signal the hangup at turn end.
         int hangIdx = state.acc.indexOf(SystemPromptBuilder.HANGUP + "|");
         int callIdx = state.acc.indexOf(SystemPromptBuilder.CALLBACK_NEEDED + "|");
-        int idx; Mode newMode;
+        int bareHangIdx = bareKeywordIndex(state.acc, SystemPromptBuilder.HANGUP);
+        int bareCallIdx = bareKeywordIndex(state.acc, SystemPromptBuilder.CALLBACK_NEEDED);
+        int idx; Mode newMode; boolean bare;
         if (hangIdx >= 0 && (callIdx < 0 || hangIdx < callIdx)) {
-            idx = hangIdx; newMode = Mode.HANGUP;
+            idx = hangIdx; newMode = Mode.HANGUP; bare = false;
         } else if (callIdx >= 0) {
-            idx = callIdx; newMode = Mode.CALLBACK;
+            idx = callIdx; newMode = Mode.CALLBACK; bare = false;
+        } else if (bareHangIdx >= 0 && (bareCallIdx < 0 || bareHangIdx < bareCallIdx)) {
+            idx = bareHangIdx; newMode = Mode.HANGUP; bare = true;
+        } else if (bareCallIdx >= 0) {
+            idx = bareCallIdx; newMode = Mode.CALLBACK; bare = true;
         } else {
-            idx = -1; newMode = null;
+            idx = -1; newMode = null; bare = false;
         }
 
         if (idx >= 0 && (state.mode == Mode.NORMAL || state.mode == Mode.UNKNOWN)) {
-            int pipeIdx = state.acc.indexOf("|", idx);
-            String tail = (pipeIdx > 0 && pipeIdx + 1 < state.acc.length())
-                    ? state.acc.substring(pipeIdx + 1) : "";
-            state.sentinelSpokenAcc.append(tail);
+            if (bare) {
+                // No "|<farewell>" follows. The farewell (if any) is the text
+                // already streamed before the keyword. Just truncate at the
+                // keyword and finishTurn will send Hangup/CallbackNeeded with
+                // empty spoken text — call-orch hangs up after current TTS drains.
+                log.info("[sentinel] BARE {} keyword recovered conversationId={} idxInAcc={}",
+                        newMode, session.getConversationId(), idx);
+            } else {
+                int pipeIdx = state.acc.indexOf("|", idx);
+                String tail = (pipeIdx > 0 && pipeIdx + 1 < state.acc.length())
+                        ? state.acc.substring(pipeIdx + 1) : "";
+                state.sentinelSpokenAcc.append(tail);
+                log.debug("[sentinel] mid-stream {} detected conversationId={} idxInAcc={}",
+                        newMode, session.getConversationId(), idx);
+            }
             // Strip the sentinel + everything after from the live accumulator.
-            // We deliberately also drop any unflushed pre-sentinel text — it
-            // was the model's "preamble" that it then decided to follow with
-            // the hangup, so speaking half of it would be incoherent. Already-
-            // flushed prefix can't be unsent, but that's fine; the farewell
-            // we play in HANGUP mode bridges naturally.
+            // For "bare" case keep already-flushed text intact (it was the
+            // intended farewell); for the normal format case we drop any
+            // unflushed pre-sentinel text since it was preamble the model then
+            // decided to abandon.
             state.acc.setLength(Math.min(state.forwardedUpto, idx));
             state.mode = newMode;
-            log.debug("[sentinel] mid-stream {} detected conversationId={} idxInAcc={}",
-                    newMode, session.getConversationId(), idx);
             return;
         }
 
@@ -562,6 +579,31 @@ public class ConversationWebSocketHandler extends TextWebSocketHandler {
                     .text(trimmed)
                     .build());
         }
+    }
+
+    /** Locate {@code keyword} in {@code acc} as a standalone token — preceded
+     *  by whitespace/punctuation/start, NOT followed by "|" or alphanumeric.
+     *  Returns -1 if absent. Used to rescue cases where the model emits a
+     *  bare keyword like "...have a good day. HANGUP" instead of the
+     *  required "HANGUP|...have a good day." format. */
+    private static int bareKeywordIndex(CharSequence acc, String keyword) {
+        int from = 0;
+        while (true) {
+            int i = indexOf(acc, keyword, from);
+            if (i < 0) return -1;
+            char prev = i == 0 ? ' ' : acc.charAt(i - 1);
+            int after = i + keyword.length();
+            char next = after >= acc.length() ? ' ' : acc.charAt(after);
+            boolean prevOk = !Character.isLetterOrDigit(prev) && prev != '_';
+            boolean nextOk = next != '|' && !Character.isLetterOrDigit(next) && next != '_';
+            if (prevOk && nextOk) return i;
+            from = i + 1;
+        }
+    }
+
+    private static int indexOf(CharSequence s, String needle, int from) {
+        if (s instanceof StringBuilder sb) return sb.indexOf(needle, from);
+        return s.toString().indexOf(needle, from);
     }
 
     private static boolean isSentenceEnd(char c) {

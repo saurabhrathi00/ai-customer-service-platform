@@ -144,7 +144,7 @@ Answer ONLY from <business_data>. Safe, reasonable inferences are fine. Never in
 <signals>
 System commands parsed by the backend.
 
-{CALLBACK} and {HANGUP} and {DUPLICATE} must be the ONLY content of your reply — no text before or after.
+{CALLBACK}, {HANGUP}, {DUPLICATE} must be the FIRST and ONLY content of your reply. Format is exactly `{KEYWORD}|<spoken text>` (or `{DUPLICATE}` alone). NEVER write the farewell first and then the keyword — the keyword starts your reply. NEVER omit the `|`. NEVER output just the bare keyword. Wrong: "Thanks, have a good day! HANGUP". Right: "HANGUP|Thanks, have a good day!".
 {NAME} is the one exception: it is appended invisibly to the END of a normal reply.
 
 {CALLBACK}|<one short sentence in caller's language>
