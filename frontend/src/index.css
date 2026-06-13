@@ -8,22 +8,22 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 224 71% 4%;
+    --foreground: 260 30% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card-foreground: 260 30% 8%;
 
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 43 90% 55%;
+    --primary-foreground: 260 30% 8%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 224 71% 4%;
+    --secondary: 260 20% 94%;
+    --secondary-foreground: 260 30% 12%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 260 15% 94%;
+    --muted-foreground: 260 10% 46%;
 
-    --accent: 262 83% 96%;
-    --accent-foreground: 262 83% 38%;
+    --accent: 43 80% 93%;
+    --accent-foreground: 43 90% 30%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -31,32 +31,31 @@
     --success: 142 76% 36%;
     --warning: 38 92% 50%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 262 83% 58%;
+    --border: 260 15% 88%;
+    --input: 260 15% 88%;
+    --ring: 43 90% 55%;
 
     --radius: 0.75rem;
   }
 
   .dark {
-    /* Deep space dark — the 2026 premium look */
-    --background: 230 35% 4%;
-    --foreground: 210 20% 96%;
+    --background: 260 35% 8%;
+    --foreground: 260 15% 94%;
 
-    --card: 228 30% 7%;
-    --card-foreground: 210 20% 96%;
+    --card: 260 28% 11%;
+    --card-foreground: 260 15% 94%;
 
-    --primary: 262 80% 70%;
-    --primary-foreground: 228 30% 7%;
+    --primary: 43 92% 58%;
+    --primary-foreground: 260 35% 8%;
 
-    --secondary: 228 20% 12%;
-    --secondary-foreground: 210 20% 90%;
+    --secondary: 260 20% 16%;
+    --secondary-foreground: 260 10% 88%;
 
-    --muted: 228 20% 12%;
-    --muted-foreground: 220 14% 58%;
+    --muted: 260 20% 15%;
+    --muted-foreground: 260 10% 56%;
 
-    --accent: 262 50% 18%;
-    --accent-foreground: 262 90% 88%;
+    --accent: 260 28% 18%;
+    --accent-foreground: 43 92% 75%;
 
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
@@ -64,9 +63,9 @@
     --success: 142 70% 48%;
     --warning: 38 92% 58%;
 
-    --border: 230 20% 14%;
-    --input: 228 20% 12%;
-    --ring: 262 80% 70%;
+    --border: 260 20% 18%;
+    --input: 260 20% 16%;
+    --ring: 43 92% 58%;
   }
 
   * {
@@ -111,9 +110,9 @@
   /* Aurora animated gradient background */
   .aurora-bg {
     background:
-      radial-gradient(ellipse 80% 60% at 10% 10%, hsl(262 80% 60% / 0.18) 0%, transparent 55%),
-      radial-gradient(ellipse 60% 50% at 90% 5%, hsl(214 90% 60% / 0.15) 0%, transparent 55%),
-      radial-gradient(ellipse 70% 60% at 50% 100%, hsl(300 70% 55% / 0.10) 0%, transparent 55%),
+      radial-gradient(ellipse 80% 60% at 10% 10%, hsl(260 60% 40% / 0.22) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 90% 5%,  hsl(43 90% 55% / 0.16) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 60% at 50% 95%, hsl(280 50% 35% / 0.14) 0%, transparent 55%),
       hsl(var(--background));
   }
 
@@ -135,20 +134,20 @@
     border: 1px solid hsl(var(--border) / 0.5);
   }
 
-  /* Gradient text — purple to blue */
+  /* Gradient text — gold → amber */
   .gradient-text {
-    background: linear-gradient(135deg, hsl(262 80% 75%), hsl(214 90% 70%));
+    background: linear-gradient(135deg, hsl(43 92% 62%), hsl(35 95% 55%));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 
-  /* Glow effect on primary-colored elements */
+  /* Glow effects */
   .glow-primary {
-    box-shadow: 0 0 24px hsl(var(--primary) / 0.35), 0 0 60px hsl(var(--primary) / 0.10);
+    box-shadow: 0 0 24px hsl(var(--primary) / 0.40), 0 0 60px hsl(var(--primary) / 0.12);
   }
   .glow-primary-sm {
-    box-shadow: 0 0 10px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.2);
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.55), 0 0 20px hsl(var(--primary) / 0.22);
   }
 
   /* Animated gradient border */
@@ -160,7 +159,7 @@
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    background: linear-gradient(135deg, hsl(262 80% 68%), hsl(214 90% 60%), hsl(300 70% 65%));
+    background: linear-gradient(135deg, hsl(43 92% 58%), hsl(260 70% 60%), hsl(43 90% 48%));
     background-size: 300% 300%;
     animation: border-flow 3s ease infinite;
     z-index: -1;
@@ -178,10 +177,10 @@
     border-radius: inherit;
     background: conic-gradient(
       from 0deg,
-      hsl(262 80% 68% / 0),
-      hsl(262 80% 68% / 0.6),
-      hsl(214 90% 60% / 0.6),
-      hsl(262 80% 68% / 0)
+      hsl(43 92% 58% / 0),
+      hsl(43 92% 58% / 0.6),
+      hsl(260 70% 60% / 0.6),
+      hsl(43 92% 58% / 0)
     );
     animation: spin-slow 4s linear infinite;
     z-index: -1;
@@ -190,13 +189,12 @@
   /* Subtle mesh for marketing surfaces */
   .mesh-bg {
     background-image:
-      radial-gradient(at 12% 14%, hsl(var(--primary) / 0.16) 0px, transparent 50%),
-      radial-gradient(at 88% 10%, hsl(214 90% 60% / 0.14) 0px, transparent 50%),
-      radial-gradient(at 50% 92%, hsl(300 70% 55% / 0.10) 0px, transparent 50%);
+      radial-gradient(at 12% 14%, hsl(var(--primary) / 0.18) 0px, transparent 50%),
+      radial-gradient(at 88% 10%, hsl(260 70% 55% / 0.14) 0px, transparent 50%),
+      radial-gradient(at 50% 92%, hsl(280 50% 40% / 0.10) 0px, transparent 50%);
   }
 }
 
-/* Custom property for smooth number transitions */
 @property --num {
   syntax: '<integer>';
   initial-value: 0;

@@ -92,15 +92,15 @@ export function CursorTrail() {
           ctx.lineCap    = 'round';
           ctx.lineJoin   = 'round';
           ctx.lineWidth  = width;
-          ctx.shadowColor = `hsla(152, 70%, 62%, ${alpha})`;
+          ctx.shadowColor = `hsla(43, 90%, 60%, ${alpha})`;
           ctx.shadowBlur  = 10 + progress * 10;
-          ctx.strokeStyle = `hsla(152, 70%, 68%, ${alpha})`;
+          ctx.strokeStyle = `hsla(43, 90%, 65%, ${alpha})`;
           ctx.stroke();
 
           // crisp bright core
           ctx.shadowBlur  = 0;
           ctx.lineWidth   = width * 0.4;
-          ctx.strokeStyle = `hsla(152, 80%, 88%, ${alpha * 0.7})`;
+          ctx.strokeStyle = `hsla(43, 95%, 90%, ${alpha * 0.7})`;
           ctx.stroke();
         }
       }
@@ -119,9 +119,9 @@ export function CursorTrail() {
         const r     = s.size * (0.4 + t * 0.6);
 
         ctx.globalAlpha = alpha;
-        ctx.shadowColor = 'hsl(152, 80%, 72%)';
+        ctx.shadowColor = 'hsl(43, 92%, 70%)';
         ctx.shadowBlur  = 8;
-        ctx.fillStyle   = `hsl(${145 + Math.random() * 30}, 85%, ${72 + t * 15}%)`;
+        ctx.fillStyle   = `hsl(${38 + Math.random() * 20}, 92%, ${68 + t * 18}%)`;
 
         if (s.star) {
           // 4-point sparkle cross

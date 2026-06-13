@@ -246,9 +246,9 @@ export default function DashboardPage() {
                       <AreaChart data={stats.series} margin={{ left: -20, right: 8, top: 10 }}>
                         <defs>
                           <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="hsl(262 80% 68%)" stopOpacity={0.5} />
-                            <stop offset="60%" stopColor="hsl(262 80% 68%)" stopOpacity={0.1} />
-                            <stop offset="100%" stopColor="hsl(262 80% 68%)" stopOpacity={0} />
+                            <stop offset="0%" stopColor="hsl(43 92% 58%)" stopOpacity={0.5} />
+                            <stop offset="60%" stopColor="hsl(43 92% 58%)" stopOpacity={0.1} />
+                            <stop offset="100%" stopColor="hsl(43 92% 58%)" stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
@@ -269,11 +269,11 @@ export default function DashboardPage() {
                         <Area
                           type="monotone"
                           dataKey="count"
-                          stroke="hsl(262 80% 68%)"
+                          stroke="hsl(43 92% 58%)"
                           strokeWidth={2.5}
                           fill="url(#callsGradient)"
                           dot={false}
-                          activeDot={{ r: 4, fill: 'hsl(262 80% 68%)', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                          activeDot={{ r: 4, fill: 'hsl(43 92% 58%)', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>

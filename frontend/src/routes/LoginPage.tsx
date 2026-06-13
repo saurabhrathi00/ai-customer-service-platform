@@ -104,7 +104,7 @@ export default function LoginPage() {
   const panelY = useMotionValue(400);
   const panelSpringX = useSpring(panelX, { stiffness: 130, damping: 28 });
   const panelSpringY = useSpring(panelY, { stiffness: 130, damping: 28 });
-  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${panelSpringX}px ${panelSpringY}px, hsl(262 80% 68% / 0.20), transparent 62%)`;
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${panelSpringX}px ${panelSpringY}px, hsl(43 92% 58% / 0.18), transparent 62%)`;
 
   const orb1X = useTransform(panelSpringX, [0, 640], [18, -18]);
   const orb1Y = useTransform(panelSpringY, [0, 900], [18, -18]);
