@@ -6,7 +6,13 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowRight, Sparkles, Brain, PhoneCall, Star, Shield } from 'lucide-react';
 import * as React from 'react';
-import { motion } from 'framer-motion';
+import {
+  motion,
+  useMotionValue,
+  useMotionTemplate,
+  useSpring,
+  useTransform,
+} from 'framer-motion';
 
 import { Logo } from '@/components/app/Logo';
 import { Button } from '@/components/ui/Button';
@@ -44,12 +50,12 @@ export default function LoginPage() {
   if (isAuthenticated()) {
     return <Navigate to={from} replace />;
   }
+
   const [showPwd, setShowPwd] = React.useState(false);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { email: '', password: '' },
   });
-
   const [error, setError] = React.useState<string | null>(null);
 
   const mutation = useMutation({
@@ -70,20 +76,108 @@ export default function LoginPage() {
     },
   });
 
+  // ── Custom cursor ──────────────────────────────────────────────
+  const cursorX = useMotionValue(-200);
+  const cursorY = useMotionValue(-200);
+  // dot: tight spring — closely tracks the pointer
+  const dotX = useSpring(cursorX, { stiffness: 700, damping: 40, mass: 0.4 });
+  const dotY = useSpring(cursorY, { stiffness: 700, damping: 40, mass: 0.4 });
+  // ring: medium spring — lags a little
+  const ringX = useSpring(cursorX, { stiffness: 220, damping: 30, mass: 0.7 });
+  const ringY = useSpring(cursorY, { stiffness: 220, damping: 30, mass: 0.7 });
+  // glow blob: slow spring — trails noticeably
+  const glowX = useSpring(cursorX, { stiffness: 70, damping: 22, mass: 1 });
+  const glowY = useSpring(cursorY, { stiffness: 70, damping: 22, mass: 1 });
+
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      cursorX.set(e.clientX);
+      cursorY.set(e.clientY);
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [cursorX, cursorY]);
+
+  // ── Left panel: spotlight + parallax orbs ─────────────────────
+  const panelX = useMotionValue(300);
+  const panelY = useMotionValue(400);
+  const panelSpringX = useSpring(panelX, { stiffness: 130, damping: 28 });
+  const panelSpringY = useSpring(panelY, { stiffness: 130, damping: 28 });
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${panelSpringX}px ${panelSpringY}px, hsl(262 80% 68% / 0.20), transparent 62%)`;
+
+  const orb1X = useTransform(panelSpringX, [0, 640], [18, -18]);
+  const orb1Y = useTransform(panelSpringY, [0, 900], [18, -18]);
+  const orb2X = useTransform(panelSpringX, [0, 640], [-22, 22]);
+  const orb2Y = useTransform(panelSpringY, [0, 900], [-14, 14]);
+
+  function onPanelMove(e: React.MouseEvent<HTMLDivElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    panelX.set(e.clientX - r.left);
+    panelY.set(e.clientY - r.top);
+  }
+
+  // ── Right panel: 3-D form tilt ────────────────────────────────
+  const formNormX = useMotionValue(0.5);
+  const formNormY = useMotionValue(0.5);
+  const tiltX = useSpring(useTransform(formNormY, [0, 1], [3, -3]), { stiffness: 130, damping: 28 });
+  const tiltY = useSpring(useTransform(formNormX, [0, 1], [-3, 3]), { stiffness: 130, damping: 28 });
+
+  function onFormMove(e: React.MouseEvent<HTMLDivElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    formNormX.set((e.clientX - r.left) / r.width);
+    formNormY.set((e.clientY - r.top) / r.height);
+  }
+  function onFormLeave() {
+    formNormX.set(0.5);
+    formNormY.set(0.5);
+  }
+
   return (
-    <div className="min-h-screen w-full bg-background overflow-hidden">
+    <div className="min-h-screen w-full bg-background overflow-hidden lg:cursor-none">
+
+      {/* ── Custom cursor (desktop only) ── */}
+      {/* dot */}
+      <motion.div
+        className="pointer-events-none fixed z-[200] hidden lg:block h-2.5 w-2.5 rounded-full bg-primary"
+        style={{ left: dotX, top: dotY, translateX: '-50%', translateY: '-50%' }}
+      />
+      {/* ring */}
+      <motion.div
+        className="pointer-events-none fixed z-[199] hidden lg:block h-7 w-7 rounded-full border border-primary/60"
+        style={{ left: ringX, top: ringY, translateX: '-50%', translateY: '-50%' }}
+      />
+      {/* trailing glow */}
+      <motion.div
+        className="pointer-events-none fixed z-[198] hidden lg:block h-24 w-24 rounded-full bg-primary/10 blur-2xl"
+        style={{ left: glowX, top: glowY, translateX: '-50%', translateY: '-50%' }}
+      />
+
       <div className="grid min-h-screen lg:grid-cols-2">
 
         {/* ── Left: marketing column ── */}
-        <div className="relative hidden lg:flex flex-col justify-between p-12 border-r border-border/40 overflow-hidden">
-          {/* Aurora background */}
+        <div
+          className="relative hidden lg:flex flex-col justify-between p-12 border-r border-border/40 overflow-hidden"
+          onMouseMove={onPanelMove}
+        >
+          {/* Static backgrounds */}
           <div className="absolute inset-0 aurora-bg" />
-          {/* Dot grid */}
           <div className="absolute inset-0 dot-grid opacity-60" />
 
-          {/* Floating glow orbs */}
-          <div className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-primary/10 blur-3xl animate-glow-pulse" />
-          <div className="absolute bottom-1/4 right-1/4 h-48 w-48 rounded-full bg-blue-500/8 blur-3xl animate-glow-pulse" style={{ animationDelay: '1.5s' }} />
+          {/* Cursor spotlight overlay */}
+          <motion.div
+            className="pointer-events-none absolute inset-0 z-[5]"
+            style={{ background: spotlight }}
+          />
+
+          {/* Parallax orbs */}
+          <motion.div
+            className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-primary/10 blur-3xl"
+            style={{ x: orb1X, y: orb1Y }}
+          />
+          <motion.div
+            className="absolute bottom-1/4 right-1/4 h-48 w-48 rounded-full bg-blue-500/8 blur-3xl"
+            style={{ x: orb2X, y: orb2Y }}
+          />
 
           <div className="relative z-10">
             <Logo />
@@ -133,7 +227,6 @@ export default function LoginPage() {
               ))}
             </motion.ul>
 
-            {/* Stats row */}
             <motion.div
               className="mt-10 grid grid-cols-3 gap-4"
               initial={{ opacity: 0, y: 10 }}
@@ -155,8 +248,12 @@ export default function LoginPage() {
         </div>
 
         {/* ── Right: form column ── */}
-        <div className="relative flex items-center justify-center px-6 py-10 lg:p-12 overflow-hidden">
-          {/* Subtle background glow */}
+        <div
+          className="relative flex items-center justify-center px-6 py-10 lg:p-12 overflow-hidden"
+          style={{ perspective: '900px' }}
+          onMouseMove={onFormMove}
+          onMouseLeave={onFormLeave}
+        >
           <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
           <motion.form
@@ -165,6 +262,7 @@ export default function LoginPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
+            style={{ rotateX: tiltX, rotateY: tiltY }}
           >
             <div className="lg:hidden mb-2">
               <Logo />
