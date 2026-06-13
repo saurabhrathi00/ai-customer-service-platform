@@ -1,46 +1,55 @@
 import * as React from 'react';
 
-const TRAIL_MS = 550;
-const MAX_PTS  = 80;
-const SPARK_LIFE  = 420;   // ms each spark lives
-const SPARKS_PER_MOVE = 3; // sparks spawned per mousemove
+const TRAIL_MS        = 650;   // how long a point lives
+const MAX_PTS         = 120;   // more points → smoother interpolation
+const SPARK_LIFE      = 500;
+const SPARKS_PER_MOVE = 2;     // fewer sparks feel cleaner
 
 interface Point { x: number; y: number; t: number }
 interface Spark {
   x: number; y: number;
   vx: number; vy: number;
   size: number;
-  life: number;    // ms remaining
+  life: number;
   maxLife: number;
-  star: boolean;   // draw as 4-point cross instead of circle
+  star: boolean;
 }
 
 export function CursorTrail() {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const pts    = React.useRef<Point[]>([]);
-  const sparks = React.useRef<Spark[]>([]);
-  const raf    = React.useRef(0);
+  const pts       = React.useRef<Point[]>([]);
+  const sparks    = React.useRef<Spark[]>([]);
+  const raf       = React.useRef(0);
 
   // Collect mouse positions + spawn sparks
   React.useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const now = performance.now();
+
+      // Minimum distance gate — don't add points when barely moving
+      const last = pts.current[pts.current.length - 1];
+      if (last) {
+        const dx = e.clientX - last.x;
+        const dy = e.clientY - last.y;
+        if (dx * dx + dy * dy < 4) return; // < 2px, skip
+      }
+
       pts.current.push({ x: e.clientX, y: e.clientY, t: now });
       if (pts.current.length > MAX_PTS) pts.current.shift();
 
-      // Spawn sparks
+      // Spawn sparks — slower, lighter feel
       for (let i = 0; i < SPARKS_PER_MOVE; i++) {
-        const angle  = Math.random() * Math.PI * 2;
-        const speed  = 0.6 + Math.random() * 1.8;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.3 + Math.random() * 1.2;
         sparks.current.push({
-          x: e.clientX + (Math.random() - 0.5) * 4,
-          y: e.clientY + (Math.random() - 0.5) * 4,
+          x: e.clientX + (Math.random() - 0.5) * 6,
+          y: e.clientY + (Math.random() - 0.5) * 6,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
-          size: 1.2 + Math.random() * 2,
+          size: 1 + Math.random() * 1.8,
           life: SPARK_LIFE,
           maxLife: SPARK_LIFE,
-          star: Math.random() > 0.55,
+          star: Math.random() > 0.5,
         });
       }
     };
@@ -72,60 +81,73 @@ export function CursorTrail() {
 
       ctx.clearRect(0, 0, canvas!.width, canvas!.height);
 
-      // ── Trail ────────────────────────────────────────────
+      // ── Smooth trail via quadratic bezier through midpoints ──
       pts.current = pts.current.filter(p => now - p.t < TRAIL_MS);
       const points = pts.current;
 
-      if (points.length >= 2) {
+      if (points.length >= 3) {
         const len = points.length;
-        for (let i = 1; i < len; i++) {
-          const prev = points[i - 1];
-          const curr = points[i];
-          const progress  = i / (len - 1);
-          const ageFactor = Math.max(0, 1 - (now - curr.t) / TRAIL_MS);
-          const alpha = progress * ageFactor * 0.9;
-          const width = 0.8 + progress * 2.8;
 
+        // Draw in segments using midpoint-bezier technique.
+        // Each segment goes from mid(i-1,i) → mid(i,i+1) with points[i] as control point.
+        // This creates a continuous smooth C1 spline.
+        for (let i = 1; i < len - 1; i++) {
+          const p0 = points[i - 1];
+          const p1 = points[i];
+          const p2 = points[i + 1];
+
+          // Midpoints
+          const m0x = (p0.x + p1.x) / 2;
+          const m0y = (p0.y + p1.y) / 2;
+          const m1x = (p1.x + p2.x) / 2;
+          const m1y = (p1.y + p2.y) / 2;
+
+          const progress  = i / (len - 2);          // 0 (tail) → 1 (head)
+          const ageFactor = Math.max(0, 1 - (now - p1.t) / TRAIL_MS);
+          const alpha     = progress * ageFactor * 0.88;
+          const width     = 0.6 + progress * 3.2;
+
+          // ── Glow pass ──
           ctx.beginPath();
-          ctx.moveTo(prev.x, prev.y);
-          ctx.lineTo(curr.x, curr.y);
+          ctx.moveTo(m0x, m0y);
+          ctx.quadraticCurveTo(p1.x, p1.y, m1x, m1y);
           ctx.lineCap    = 'round';
           ctx.lineJoin   = 'round';
           ctx.lineWidth  = width;
           ctx.shadowColor = `hsla(252, 90%, 68%, ${alpha})`;
-          ctx.shadowBlur  = 14 + progress * 14;
+          ctx.shadowBlur  = 12 + progress * 16;
           ctx.strokeStyle = `hsla(252, 88%, 72%, ${alpha})`;
           ctx.stroke();
 
-          // crisp bright core
+          // ── Bright core pass (no shadow so it stays sharp) ──
           ctx.shadowBlur  = 0;
-          ctx.lineWidth   = width * 0.4;
-          ctx.strokeStyle = `hsla(220, 95%, 92%, ${alpha * 0.8})`;
+          ctx.lineWidth   = width * 0.35;
+          ctx.strokeStyle = `hsla(220, 95%, 94%, ${alpha * 0.75})`;
           ctx.stroke();
         }
       }
 
-      // ── Sparks ───────────────────────────────────────────
+      // ── Sparks ──────────────────────────────────────────────
       sparks.current = sparks.current.filter(s => s.life > 0);
 
       for (const s of sparks.current) {
         s.life -= dt;
-        s.x += s.vx;
-        s.y += s.vy;
-        s.vy += 0.03; // tiny gravity
+        s.x    += s.vx;
+        s.y    += s.vy;
+        s.vy   += 0.018; // very gentle gravity
+        s.vx   *= 0.99;  // slight air drag
 
-        const t     = Math.max(0, s.life / s.maxLife); // 1→0
-        const alpha = t * t;                            // ease-out fade
-        const r     = s.size * (0.4 + t * 0.6);
+        const t     = Math.max(0, s.life / s.maxLife);
+        const alpha = t * t * t;              // cubic fade — lingers then snaps out
+        const r     = s.size * (0.3 + t * 0.7);
 
         ctx.globalAlpha = alpha;
         ctx.shadowColor = 'hsl(252, 90%, 72%)';
-        ctx.shadowBlur  = 12;
-        ctx.fillStyle   = `hsl(${242 + Math.random() * 30}, 90%, ${68 + t * 18}%)`;
+        ctx.shadowBlur  = 10;
+        ctx.fillStyle   = `hsl(${242 + Math.random() * 28}, 88%, ${70 + t * 16}%)`;
 
         if (s.star) {
-          // 4-point sparkle cross
-          drawStar(ctx, s.x, s.y, r * 2.5);
+          drawStar(ctx, s.x, s.y, r * 2.2);
         } else {
           ctx.beginPath();
           ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
@@ -154,23 +176,21 @@ export function CursorTrail() {
   );
 }
 
-/** Draws a 4-point star/cross sparkle centered at (cx, cy) */
 function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
-  const thin = r * 0.18;
+  const thin = r * 0.16;
   ctx.beginPath();
-  // horizontal bar
-  ctx.moveTo(cx - r, cy - thin);
+  ctx.moveTo(cx - r,    cy - thin);
   ctx.lineTo(cx - thin, cy - thin);
   ctx.lineTo(cx - thin, cy - r);
   ctx.lineTo(cx + thin, cy - r);
   ctx.lineTo(cx + thin, cy - thin);
-  ctx.lineTo(cx + r, cy - thin);
-  ctx.lineTo(cx + r, cy + thin);
+  ctx.lineTo(cx + r,    cy - thin);
+  ctx.lineTo(cx + r,    cy + thin);
   ctx.lineTo(cx + thin, cy + thin);
   ctx.lineTo(cx + thin, cy + r);
   ctx.lineTo(cx - thin, cy + r);
   ctx.lineTo(cx - thin, cy + thin);
-  ctx.lineTo(cx - r, cy + thin);
+  ctx.lineTo(cx - r,    cy + thin);
   ctx.closePath();
   ctx.fill();
 }
