@@ -12,7 +12,7 @@ export function Logo({ size = 28, className, withWordmark = true }: LogoProps) {
       <div className="relative" style={{ width: size, height: size }}>
         {/* Glow halo */}
         <div
-          className="absolute inset-0 rounded-xl bg-primary/40 blur-md animate-glow-pulse"
+          className="absolute inset-0 rounded-xl bg-primary/35 blur-md animate-glow-pulse"
           style={{ borderRadius: size * 0.3 }}
         />
         <svg
@@ -26,9 +26,9 @@ export function Logo({ size = 28, className, withWordmark = true }: LogoProps) {
         >
           <defs>
             <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-              <stop offset="0"   stopColor="hsl(6 92% 68%)" />
-              <stop offset="0.5" stopColor="hsl(18 95% 63%)" />
-              <stop offset="1"   stopColor="hsl(350 88% 62%)" />
+              <stop offset="0"   stopColor="hsl(252 90% 72%)" />
+              <stop offset="0.5" stopColor="hsl(220 90% 68%)" />
+              <stop offset="1"   stopColor="hsl(200 95% 62%)" />
             </linearGradient>
           </defs>
           <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#logoGrad)" />
