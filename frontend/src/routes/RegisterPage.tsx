@@ -140,6 +140,31 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen w-full bg-background overflow-hidden lg:cursor-none">
 
+      {/* ── Top nav bar ── */}
+      <header className="fixed top-0 inset-x-0 z-[190] flex items-center justify-between px-6 py-3 border-b border-border/30 bg-background/70 backdrop-blur-md">
+        <Logo />
+        <nav className="hidden sm:flex items-center gap-1">
+          {[
+            { label: 'About', to: '/about' },
+            { label: 'Pricing', to: '/pricing' },
+            { label: 'Support', to: '/support' },
+          ].map(({ label, to }) => (
+            <Link
+              key={to}
+              to={to}
+              className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground rounded-md hover:bg-accent/40 transition-colors"
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <Link to="/login">
+          <Button size="sm" variant="outline" className="gap-1.5">
+            Sign in
+          </Button>
+        </Link>
+      </header>
+
       {/* ── Cursor trail ── */}
       <CursorTrail />
 
@@ -157,7 +182,7 @@ export default function RegisterPage() {
         style={{ left: glowX, top: glowY, translateX: '-50%', translateY: '-50%' }}
       />
 
-      <div className="grid min-h-screen lg:grid-cols-2">
+      <div className="grid min-h-screen lg:grid-cols-2 pt-[57px]">
 
         {/* ── Left: marketing column ── */}
         <div
