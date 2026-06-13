@@ -109,7 +109,7 @@ export function EscalationsTab() {
               {rules.data!.map((r) => {
                 const meta = ACTION_META[r.action];
                 return (
-                  <li key={r.id} className="group p-4 transition-colors hover:bg-accent/30">
+                  <li key={r.id} className="group p-4 transition-all duration-200 hover:bg-primary/[0.04] hover:translate-y-[-1px] hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_4px_12px_hsl(0_0%_0%/0.1)]">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <p className="font-medium leading-6">"{r.triggerPhrase}"</p>

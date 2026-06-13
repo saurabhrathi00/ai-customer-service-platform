@@ -211,8 +211,8 @@ export default function CallsListPage() {
                       return (
                         <tr
                           key={c.id}
-                          className={`border-b border-border/40 transition-colors last:border-0 hover:bg-primary/5 ${
-                            checked ? 'bg-primary/5' : ''
+                          className={`border-b border-border/40 transition-colors duration-150 last:border-0 cursor-pointer hover:bg-primary/[0.04] ${
+                            checked ? 'bg-primary/[0.05]' : ''
                           }`}
                         >
                           <td className="px-4 py-3">

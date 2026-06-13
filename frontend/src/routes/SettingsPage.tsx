@@ -17,19 +17,47 @@ export default function SettingsPage() {
       />
       <PageBody className="grid gap-6 lg:grid-cols-2">
         <motion.div
-          className="contents"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.05 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0 }}
         >
           <BusinessProfileCard />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.07 }}
+        >
           <SubscriptionCard />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.14 }}
+        >
           <PhoneNumbersCard />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.21 }}
+        >
           <NotificationRecipientsCard />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.28 }}
+        >
           <ChangePasswordCard />
-          <div className="lg:col-span-2">
-            <RatingConfigCard />
-          </div>
+        </motion.div>
+        <motion.div
+          className="lg:col-span-2"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.35 }}
+        >
+          <RatingConfigCard />
         </motion.div>
       </PageBody>
     </>

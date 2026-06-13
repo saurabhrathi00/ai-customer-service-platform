@@ -161,7 +161,10 @@ export default function ConfigurationsPage() {
                       onChange={(e) => setMaxN(clamp(Number(e.target.value) || 1, 1, 10))}
                     />
                   </div>
-                  <div className="rounded-xl border border-border/40 bg-primary/5 p-3">
+                  <div
+                    className="rounded-xl border border-primary/15 bg-primary/5 p-3 backdrop-blur-sm"
+                    style={{ boxShadow: '0 0 0 1px hsl(252 90% 67% / 0.06), 0 4px 16px hsl(252 90% 67% / 0.04)' }}
+                  >
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Schedule preview
                     </p>
@@ -179,11 +182,16 @@ export default function ConfigurationsPage() {
           </Card>
         </motion.div>
 
-        <div className="lg:col-span-2 flex justify-end">
+        <motion.div
+          className="lg:col-span-2 flex justify-end"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut', delay: 0.18 }}
+        >
           <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>
             <Save className="h-4 w-4" /> Save configuration
           </Button>
-        </div>
+        </motion.div>
       </PageBody>
     </>
   );

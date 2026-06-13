@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -44,6 +44,25 @@ import {
 } from '@/features/calls/helpers';
 import { useSummariesByCallId } from '@/features/calls/useSummaries';
 import { formatDuration } from '@/lib/utils';
+
+function AnimatedNumber({ value, className }: { value: number; className?: string }) {
+  const [display, setDisplay] = React.useState(0);
+  const prevRef = React.useRef(0);
+  React.useEffect(() => {
+    const from = prevRef.current;
+    prevRef.current = value;
+    const duration = 700;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(from + (value - from) * eased));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [value]);
+  return <span className={className}>{display}</span>;
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -113,7 +132,8 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 backdrop-blur-sm"
+          className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 backdrop-blur-sm"
+          style={{ boxShadow: '0 0 0 1px hsl(252 90% 67% / 0.08), 0 4px 20px hsl(252 90% 67% / 0.06)' }}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15">
             <Brain className="h-4 w-4 text-primary animate-pulse" />
@@ -354,7 +374,7 @@ export default function DashboardPage() {
                       >
                         <Link
                           to={`/calls/${c.id}`}
-                          className="flex items-center gap-4 px-4 py-3 transition-all duration-200 hover:bg-primary/5 group"
+                          className="flex items-center gap-4 px-4 py-3 transition-all duration-200 hover:bg-primary/[0.06] group"
                         >
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary transition-all duration-200 group-hover:bg-primary/20 group-hover:scale-105">
                             <PhoneCall className="h-4 w-4" />
@@ -418,13 +438,18 @@ function KpiCard({ label, value, delta, icon: Icon, tone, hint, hintTo }: KpiPro
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <div className={`grid h-9 w-9 place-items-center rounded-lg shadow-lg ${toneClass[tone]}`}>
+          <div
+            className={`grid h-9 w-9 place-items-center rounded-lg shadow-lg ${toneClass[tone]}`}
+            style={{ boxShadow: tone === 'primary' ? '0 0 16px hsl(252 90% 67% / 0.35)' : undefined }}
+          >
             <Icon className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-3 flex items-baseline gap-2">
           {value === null ? (
             <Skeleton className="h-8 w-16" />
+          ) : !isNaN(Number(value)) && value !== '—' ? (
+            <AnimatedNumber value={Number(value)} className="text-3xl font-bold tracking-tight" />
           ) : (
             <span className="text-3xl font-bold tracking-tight">{value}</span>
           )}

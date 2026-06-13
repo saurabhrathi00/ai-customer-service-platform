@@ -21,8 +21,11 @@ export default function KnowledgePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
-            <Brain className="h-3.5 w-3.5 text-primary" />
+          <div
+            className="mb-4 flex items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-xs text-muted-foreground backdrop-blur-sm"
+            style={{ boxShadow: '0 0 0 1px hsl(252 90% 67% / 0.06), 0 4px 16px hsl(252 90% 67% / 0.04)' }}
+          >
+            <Brain className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span>Changes here update what your AI agent knows in real-time.</span>
           </div>
           <Tabs defaultValue="profile">

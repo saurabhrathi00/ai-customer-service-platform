@@ -126,7 +126,7 @@ function LeadList({
             >
               <Link
                 to={`/leads/${l.id}`}
-                className="grid grid-cols-[1fr_auto] items-start gap-4 p-4 transition-colors hover:bg-primary/5"
+                className="grid grid-cols-[1fr_auto] items-start gap-4 p-4 transition-all duration-150 hover:bg-primary/[0.04] hover:translate-x-0.5"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

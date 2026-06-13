@@ -14,6 +14,8 @@ import {
   Menu,
   X,
   Zap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { Footer } from './Footer';
@@ -36,6 +38,9 @@ const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: 
 
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(() =>
+    localStorage.getItem('sidebar-collapsed') === 'true'
+  );
   const navigate = useNavigate();
   const { businessId, email, logout } = useAuthStore();
   const { data: biz } = useQuery({
@@ -57,6 +62,12 @@ export function AppLayout() {
   function doLogout() {
     logout();
     navigate('/login', { replace: true });
+  }
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem('sidebar-collapsed', String(next));
   }
 
   return (
@@ -92,10 +103,20 @@ export function AppLayout() {
 
       <div className="flex">
         {/* Sidebar (desktop) */}
-        <aside className="hidden lg:flex sticky top-0 h-screen w-60 flex-col bg-card/40 backdrop-blur-2xl sidebar-glow border-r border-border/50">
-          <SidebarBody businessName={biz?.name} email={email} onLogout={doLogout}
-                       pendingLeads={pendingLeadCount ?? 0} />
-        </aside>
+        <motion.aside
+          animate={{ width: collapsed ? 56 : 240 }}
+          transition={{ duration: 0.22, ease: 'easeInOut' }}
+          className="hidden lg:flex sticky top-0 h-screen flex-col bg-card/40 backdrop-blur-2xl sidebar-glow border-r border-border/50 overflow-hidden"
+        >
+          <SidebarBody
+            businessName={biz?.name}
+            email={email}
+            onLogout={doLogout}
+            pendingLeads={pendingLeadCount ?? 0}
+            collapsed={collapsed}
+            onToggle={toggleCollapsed}
+          />
+        </motion.aside>
 
         {/* Sidebar drawer (mobile) */}
         <AnimatePresence>
@@ -131,6 +152,8 @@ export function AppLayout() {
                   onLogout={doLogout}
                   pendingLeads={pendingLeadCount ?? 0}
                   onNavigate={() => setMobileOpen(false)}
+                  collapsed={false}
+                  onToggle={() => {}}
                 />
               </motion.aside>
             </motion.div>
@@ -154,20 +177,30 @@ function SidebarBody({
   onLogout,
   onNavigate,
   pendingLeads,
+  collapsed,
+  onToggle,
 }: {
   businessName?: string;
   email: string | null;
   onLogout: () => void;
   onNavigate?: () => void;
   pendingLeads: number;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
   const { theme, toggle } = useTheme();
 
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex h-14 items-center px-5 border-b border-border/40">
-        <Logo />
+      <div className={cn(
+        'flex h-14 items-center border-b border-border/40 shrink-0',
+        collapsed ? 'justify-center px-0' : 'px-5',
+      )}>
+        {collapsed
+          ? <Logo size={24} withWordmark={false} />
+          : <Logo />
+        }
       </div>
 
       {/* Nav items */}
@@ -186,9 +219,11 @@ function SidebarBody({
                   to={item.to}
                   end={item.end}
                   onClick={onNavigate}
+                  title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
                     cn(
                       'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+                      collapsed && 'justify-center px-0',
                       isActive
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -214,11 +249,15 @@ function SidebarBody({
                       )}>
                         <Icon className="h-4 w-4" />
                       </span>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.to === '/leads' && pendingLeads > 0 && (
-                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground shadow-[0_0_8px_hsl(var(--primary)/0.5)]">
-                          {pendingLeads}
-                        </span>
+                      {!collapsed && (
+                        <>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          {item.to === '/leads' && pendingLeads > 0 && (
+                            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground shadow-[0_0_8px_hsl(var(--primary)/0.5)]">
+                              {pendingLeads}
+                            </span>
+                          )}
+                        </>
                       )}
                     </>
                   )}
@@ -226,47 +265,95 @@ function SidebarBody({
               </motion.li>
             );
           })}
+
+          {/* Toggle button */}
+          <li>
+            <button
+              onClick={onToggle}
+              className={cn(
+                'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-all duration-150',
+                collapsed && 'justify-center px-0',
+              )}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
+                {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </span>
+              {!collapsed && <span className="flex-1">Collapse</span>}
+            </button>
+          </li>
         </ul>
       </nav>
 
       {/* AI status */}
-      <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/5 px-3 py-2.5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-          </span>
-          <Zap className="h-3.5 w-3.5 text-success" />
-          <span className="text-xs font-semibold text-success">AI Agent Active</span>
-        </div>
+      <div className="px-3 pb-2 shrink-0">
+        {collapsed ? (
+          <div className="flex items-center justify-center py-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/5 px-3 py-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+            <Zap className="h-3.5 w-3.5 text-success" />
+            <span className="text-xs font-semibold text-success">AI Agent Active</span>
+          </div>
+        )}
       </div>
 
       {/* User section */}
-      <div className="border-t border-border/40 p-3 space-y-1">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <div className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-primary text-xs font-bold ring-1 ring-primary/25"
-               style={{ boxShadow: '0 0 10px hsl(252 90% 67% / 0.20)' }}>
-            {initials(businessName ?? email ?? '?')}
+      <div className="border-t border-border/40 p-3 space-y-1 shrink-0">
+        {collapsed ? (
+          <div className="flex items-center justify-center py-1">
+            <div
+              className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-primary text-xs font-bold ring-1 ring-primary/25"
+              style={{ boxShadow: '0 0 10px hsl(252 90% 67% / 0.20)' }}
+              title={businessName ?? email ?? ''}
+            >
+              {initials(businessName ?? email ?? '?')}
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium leading-tight">{businessName ?? 'Your business'}</p>
-            <p className="truncate text-xs text-muted-foreground">{email ?? '—'}</p>
-          </div>
-        </div>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm"
-            className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground text-xs"
-            onClick={toggle}>
-            {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            {theme === 'dark' ? 'Light' : 'Dark'}
-          </Button>
-          <Button variant="ghost" size="sm"
-            className="flex-1 justify-start gap-2 text-destructive hover:text-destructive text-xs"
-            onClick={onLogout}>
-            <LogOut className="h-3.5 w-3.5" />
-            Logout
-          </Button>
-        </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+              <div
+                className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-primary text-xs font-bold ring-1 ring-primary/25"
+                style={{ boxShadow: '0 0 10px hsl(252 90% 67% / 0.20)' }}
+              >
+                {initials(businessName ?? email ?? '?')}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium leading-tight">{businessName ?? 'Your business'}</p>
+                <p className="truncate text-xs text-muted-foreground">{email ?? '—'}</p>
+              </div>
+            </div>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground text-xs"
+                onClick={toggle}
+              >
+                {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 justify-start gap-2 text-destructive hover:text-destructive text-xs"
+                onClick={onLogout}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Logout
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
