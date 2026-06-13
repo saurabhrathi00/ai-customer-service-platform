@@ -168,11 +168,6 @@ export default function LoginPage() {
           <motion.div className="absolute top-1/4 left-1/4 h-72 w-72 rounded-full bg-primary/8 blur-3xl" style={{ x: orb1X, y: orb1Y }} />
           <motion.div className="absolute bottom-1/3 right-1/4 h-52 w-52 rounded-full bg-sky-500/6 blur-3xl" style={{ x: orb2X, y: orb2Y }} />
 
-          {/* Logo */}
-          <div className="relative z-10">
-            <Logo />
-          </div>
-
           {/* Hero content */}
           <div className="relative z-10 space-y-8">
             <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }}>

@@ -155,7 +155,7 @@ export default function DashboardPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: 'Calls today', value: recent.isLoading ? null : String(stats.today), delta: stats.todayDelta, icon: PhoneCall, tone: 'primary' as const, linkTo: '/calls?filter=today' },
-            { label: 'Calls this week', value: recent.isLoading ? null : String(stats.week), delta: stats.weekDelta, icon: TrendingUp, tone: 'default' as const, linkTo: '/calls?filter=last7days' },
+            { label: 'Last 7 days', value: recent.isLoading ? null : String(stats.week), delta: stats.weekDelta, icon: TrendingUp, tone: 'default' as const, linkTo: '/calls?filter=last7days' },
             { label: 'Callbacks pending', value: recent.isLoading ? null : String(stats.callbacks), icon: PhoneForwarded, tone: 'warning' as const, linkTo: '/calls?filter=callbacks' },
             { label: 'Avg interest', value: recent.isLoading ? null : stats.avgInterest != null ? stats.avgInterest.toFixed(1) : '—', icon: Star, tone: 'success' as const },
           ].map((kpi, i) => (
