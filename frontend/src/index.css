@@ -13,7 +13,7 @@
     --card: 0 0% 100%;
     --card-foreground: 0 15% 8%;
 
-    --primary: 8 55% 55%;
+    --primary: 6 88% 58%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 0 10% 93%;
@@ -23,7 +23,7 @@
     --muted-foreground: 0 8% 46%;
 
     --accent: 8 50% 92%;
-    --accent-foreground: 8 55% 32%;
+    --accent-foreground: 8 85% 35%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -33,29 +33,29 @@
 
     --border: 0 10% 88%;
     --input: 0 10% 88%;
-    --ring: 8 55% 55%;
+    --ring: 6 88% 58%;
 
     --radius: 0.75rem;
   }
 
   .dark {
     --background: 0 15% 5%;
-    --foreground: 23 39% 94%;
+    --foreground: 23 30% 94%;
 
-    --card: 0 16% 9%;
-    --card-foreground: 23 39% 94%;
+    --card: 0 14% 8%;
+    --card-foreground: 23 30% 94%;
 
-    --primary: 8 59% 64%;
+    --primary: 6 92% 63%;
     --primary-foreground: 0 15% 5%;
 
-    --secondary: 0 14% 13%;
+    --secondary: 0 12% 13%;
     --secondary-foreground: 23 20% 88%;
 
-    --muted: 0 12% 13%;
-    --muted-foreground: 15 12% 56%;
+    --muted: 0 10% 12%;
+    --muted-foreground: 15 10% 55%;
 
-    --accent: 0 18% 16%;
-    --accent-foreground: 8 70% 80%;
+    --accent: 0 16% 15%;
+    --accent-foreground: 6 90% 78%;
 
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
@@ -63,9 +63,9 @@
     --success: 142 70% 48%;
     --warning: 38 92% 58%;
 
-    --border: 0 18% 14%;
-    --input: 0 16% 12%;
-    --ring: 8 59% 64%;
+    --border: 0 14% 16%;
+    --input: 0 12% 13%;
+    --ring: 6 92% 63%;
   }
 
   * {
@@ -107,12 +107,12 @@
     @apply animate-shimmer;
   }
 
-  /* Aurora animated gradient background */
+  /* Aurora animated gradient background — vivid warm glows */
   .aurora-bg {
     background:
-      radial-gradient(ellipse 80% 60% at 10% 10%, hsl(8 60% 40% / 0.22) 0%, transparent 55%),
-      radial-gradient(ellipse 60% 50% at 90% 5%,  hsl(20 70% 50% / 0.14) 0%, transparent 55%),
-      radial-gradient(ellipse 70% 60% at 50% 95%, hsl(350 40% 30% / 0.14) 0%, transparent 55%),
+      radial-gradient(ellipse 80% 60% at 10% 10%, hsl(6 90% 50% / 0.28) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 90% 5%,  hsl(22 80% 55% / 0.20) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 60% at 50% 95%, hsl(350 75% 40% / 0.18) 0%, transparent 55%),
       hsl(var(--background));
   }
 
@@ -134,20 +134,45 @@
     border: 1px solid hsl(var(--border) / 0.5);
   }
 
-  /* Gradient text — rose gold → warm amber */
+  /* Gradient text — vivid coral → warm amber */
   .gradient-text {
-    background: linear-gradient(135deg, hsl(8 75% 68%), hsl(20 88% 62%));
+    background: linear-gradient(135deg, hsl(6 92% 68%), hsl(22 95% 62%), hsl(350 88% 65%));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 
-  /* Glow effects */
+  /* Glow effects — strong and luminous */
   .glow-primary {
-    box-shadow: 0 0 24px hsl(var(--primary) / 0.40), 0 0 60px hsl(var(--primary) / 0.12);
+    box-shadow:
+      0 0 12px hsl(var(--primary) / 0.60),
+      0 0 40px hsl(var(--primary) / 0.30),
+      0 0 80px hsl(var(--primary) / 0.12);
   }
   .glow-primary-sm {
-    box-shadow: 0 0 10px hsl(var(--primary) / 0.55), 0 0 20px hsl(var(--primary) / 0.22);
+    box-shadow:
+      0 0 6px hsl(var(--primary) / 0.70),
+      0 0 18px hsl(var(--primary) / 0.35);
+  }
+
+  /* Shiny gloss overlay — use on buttons/cards for a lit-from-above effect */
+  .shiny {
+    position: relative;
+    overflow: hidden;
+  }
+  .shiny::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      135deg,
+      hsl(0 0% 100% / 0.18) 0%,
+      hsl(0 0% 100% / 0.06) 40%,
+      transparent 60%
+    );
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
   }
 
   /* Animated gradient border */
@@ -159,11 +184,11 @@
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    background: linear-gradient(135deg, hsl(8 75% 65%), hsl(350 60% 55%), hsl(20 85% 60%));
+    background: linear-gradient(135deg, hsl(6 92% 65%), hsl(350 80% 58%), hsl(22 90% 62%));
     background-size: 300% 300%;
     animation: border-flow 3s ease infinite;
     z-index: -1;
-    opacity: 0.6;
+    opacity: 0.7;
   }
 
   /* AI pulse ring */
@@ -177,10 +202,10 @@
     border-radius: inherit;
     background: conic-gradient(
       from 0deg,
-      hsl(8 75% 65% / 0),
-      hsl(8 75% 65% / 0.6),
-      hsl(20 85% 60% / 0.6),
-      hsl(8 75% 65% / 0)
+      hsl(6 92% 63% / 0),
+      hsl(6 92% 63% / 0.7),
+      hsl(22 90% 62% / 0.7),
+      hsl(6 92% 63% / 0)
     );
     animation: spin-slow 4s linear infinite;
     z-index: -1;
@@ -189,9 +214,9 @@
   /* Subtle mesh for marketing surfaces */
   .mesh-bg {
     background-image:
-      radial-gradient(at 12% 14%, hsl(var(--primary) / 0.18) 0px, transparent 50%),
-      radial-gradient(at 88% 10%, hsl(20 70% 55% / 0.14) 0px, transparent 50%),
-      radial-gradient(at 50% 92%, hsl(350 45% 35% / 0.10) 0px, transparent 50%);
+      radial-gradient(at 12% 14%, hsl(var(--primary) / 0.22) 0px, transparent 50%),
+      radial-gradient(at 88% 10%, hsl(22 80% 58% / 0.18) 0px, transparent 50%),
+      radial-gradient(at 50% 92%, hsl(350 70% 42% / 0.14) 0px, transparent 50%);
   }
 }
 

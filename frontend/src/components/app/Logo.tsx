@@ -26,9 +26,9 @@ export function Logo({ size = 28, className, withWordmark = true }: LogoProps) {
         >
           <defs>
             <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-              <stop offset="0"   stopColor="hsl(8 80% 68%)" />
-              <stop offset="0.5" stopColor="hsl(15 82% 62%)" />
-              <stop offset="1"   stopColor="hsl(350 65% 58%)" />
+              <stop offset="0"   stopColor="hsl(6 92% 68%)" />
+              <stop offset="0.5" stopColor="hsl(18 95% 63%)" />
+              <stop offset="1"   stopColor="hsl(350 88% 62%)" />
             </linearGradient>
           </defs>
           <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#logoGrad)" />
