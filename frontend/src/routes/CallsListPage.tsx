@@ -18,7 +18,7 @@ import { callDuration, callRelative, feedbackLabel, interestColor } from '@/feat
 import { useSummariesByCallId } from '@/features/calls/useSummaries';
 import { formatDuration } from '@/lib/utils';
 
-type FilterKey = 'all' | 'callbacks' | 'hot';
+type FilterKey = 'all' | 'callbacks' | 'hot' | 'today' | 'last7days';
 
 export default function CallsListPage() {
   const [params, setParams] = useSearchParams();
@@ -46,9 +46,14 @@ export default function CallsListPage() {
         callback: s?.callbackNeeded ?? c.callbackRequested,
       };
     };
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     let list = all;
     if (filter === 'callbacks') list = list.filter((c) => eff(c).callback);
     if (filter === 'hot') list = list.filter((c) => (eff(c).interest ?? 0) >= 4);
+    if (filter === 'today') list = list.filter((c) => new Date(c.callStartedAt) >= startOfToday);
+    if (filter === 'last7days') list = list.filter((c) => new Date(c.callStartedAt) >= sevenDaysAgo);
     if (q.trim()) {
       const needle = q.toLowerCase();
       list = list.filter((c) =>
@@ -124,6 +129,12 @@ export default function CallsListPage() {
           <div className="flex flex-wrap gap-2">
             <FilterChip active={filter === 'all'} onClick={() => selectFilter('all')}>
               All
+            </FilterChip>
+            <FilterChip active={filter === 'today'} onClick={() => selectFilter('today')}>
+              Today
+            </FilterChip>
+            <FilterChip active={filter === 'last7days'} onClick={() => selectFilter('last7days')}>
+              Last 7 days
             </FilterChip>
             <FilterChip active={filter === 'callbacks'} onClick={() => selectFilter('callbacks')}>
               <PhoneForwarded className="h-3.5 w-3.5" /> Callbacks

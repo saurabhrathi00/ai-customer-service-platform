@@ -154,9 +154,9 @@ export default function DashboardPage() {
         {/* KPI cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'Calls today', value: recent.isLoading ? null : String(stats.today), delta: stats.todayDelta, icon: PhoneCall, tone: 'primary' as const },
-            { label: 'Calls this week', value: recent.isLoading ? null : String(stats.week), delta: stats.weekDelta, icon: TrendingUp, tone: 'default' as const },
-            { label: 'Callbacks pending', value: recent.isLoading ? null : String(stats.callbacks), icon: PhoneForwarded, tone: 'warning' as const, hint: stats.callbacks > 0 ? 'Work the queue →' : undefined, hintTo: '/calls?filter=callbacks' },
+            { label: 'Calls today', value: recent.isLoading ? null : String(stats.today), delta: stats.todayDelta, icon: PhoneCall, tone: 'primary' as const, linkTo: '/calls?filter=today' },
+            { label: 'Calls this week', value: recent.isLoading ? null : String(stats.week), delta: stats.weekDelta, icon: TrendingUp, tone: 'default' as const, linkTo: '/calls?filter=last7days' },
+            { label: 'Callbacks pending', value: recent.isLoading ? null : String(stats.callbacks), icon: PhoneForwarded, tone: 'warning' as const, linkTo: '/calls?filter=callbacks' },
             { label: 'Avg interest', value: recent.isLoading ? null : stats.avgInterest != null ? stats.avgInterest.toFixed(1) : '—', icon: Star, tone: 'success' as const },
           ].map((kpi, i) => (
             <motion.div key={kpi.label} custom={i} variants={fadeUp} initial="hidden" animate="visible">
@@ -421,56 +421,53 @@ interface KpiProps {
   delta?: number;
   icon: React.ComponentType<{ className?: string }>;
   tone: 'primary' | 'default' | 'success' | 'warning';
-  hint?: string;
-  hintTo?: string;
+  linkTo?: string;
 }
-function KpiCard({ label, value, delta, icon: Icon, tone, hint, hintTo }: KpiProps) {
+function KpiCard({ label, value, delta, icon: Icon, tone, linkTo }: KpiProps) {
   const toneClass: Record<KpiProps['tone'], string> = {
-    primary: 'bg-primary/15 text-primary shadow-primary/20',
-    default: 'bg-accent text-accent-foreground shadow-accent/20',
-    success: 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] shadow-[hsl(var(--success))]/20',
-    warning: 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] shadow-[hsl(var(--warning))]/20',
+    primary: 'bg-primary/15 text-primary',
+    default: 'bg-accent text-accent-foreground',
+    success: 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]',
+    warning: 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]',
   };
-  return (
-    <Card className="relative overflow-hidden group">
-      {/* Subtle corner glow */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <div
-            className={`grid h-9 w-9 place-items-center rounded-lg shadow-lg ${toneClass[tone]}`}
-            style={{ boxShadow: tone === 'primary' ? '0 0 16px hsl(252 90% 67% / 0.35)' : undefined }}
-          >
-            <Icon className="h-4 w-4" />
-          </div>
+  const inner = (
+    <CardContent className="p-5">
+      <div className="flex items-start justify-between">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <div
+          className={`grid h-9 w-9 place-items-center rounded-lg ${toneClass[tone]}`}
+          style={{ boxShadow: tone === 'primary' ? '0 0 16px hsl(252 90% 67% / 0.35)' : undefined }}
+        >
+          <Icon className="h-4 w-4" />
         </div>
-        <div className="mt-3 flex items-baseline gap-2">
-          {value === null ? (
-            <Skeleton className="h-8 w-16" />
-          ) : !isNaN(Number(value)) && value !== '—' ? (
-            <AnimatedNumber value={Number(value)} className="text-3xl font-bold tracking-tight" />
-          ) : (
-            <span className="text-3xl font-bold tracking-tight">{value}</span>
-          )}
-          {delta != null && delta !== 0 && (
-            <span
-              className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${delta > 0 ? 'bg-success/10 text-[hsl(var(--success))]' : 'bg-destructive/10 text-destructive'}`}
-            >
-              {delta > 0 ? '+' : ''}
-              {delta}
-            </span>
-          )}
-        </div>
-        {hint && hintTo && (
-          <Link
-            to={hintTo}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-          >
-            {hint}
-          </Link>
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        {value === null ? (
+          <Skeleton className="h-8 w-16" />
+        ) : !isNaN(Number(value)) && value !== '—' ? (
+          <AnimatedNumber value={Number(value)} className="text-3xl font-bold tracking-tight" />
+        ) : (
+          <span className="text-3xl font-bold tracking-tight">{value}</span>
         )}
-      </CardContent>
+        {delta != null && delta !== 0 && (
+          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${delta > 0 ? 'bg-success/10 text-[hsl(var(--success))]' : 'bg-destructive/10 text-destructive'}`}>
+            {delta > 0 ? '+' : ''}{delta}
+          </span>
+        )}
+      </div>
+    </CardContent>
+  );
+  return linkTo ? (
+    <Link to={linkTo} className="block group">
+      <Card className="relative overflow-hidden transition-all duration-200 hover:border-primary/30 hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.12),0_8px_24px_hsl(0_0%_0%/0.18)] cursor-pointer">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/4 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+        {inner}
+      </Card>
+    </Link>
+  ) : (
+    <Card className="relative overflow-hidden group">
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+      {inner}
     </Card>
   );
 }
