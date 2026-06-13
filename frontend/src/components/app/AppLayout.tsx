@@ -267,19 +267,13 @@ function SidebarBody({
           })}
 
           {/* Toggle button */}
-          <li>
+          <li className="flex justify-end pr-2 pt-1">
             <button
               onClick={onToggle}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-all duration-150',
-                collapsed && 'justify-center px-0',
-              )}
               title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-all duration-150"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
-                {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-              </span>
-              {!collapsed && <span className="flex-1">Collapse</span>}
+              {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           </li>
         </ul>
