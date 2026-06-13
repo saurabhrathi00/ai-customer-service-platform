@@ -35,37 +35,38 @@
     --input: 220 13% 91%;
     --ring: 262 83% 58%;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 224 71% 4%;
-    --foreground: 0 0% 98%;
+    /* Deep space dark — the 2026 premium look */
+    --background: 230 35% 4%;
+    --foreground: 210 20% 96%;
 
-    --card: 224 50% 7%;
-    --card-foreground: 0 0% 98%;
+    --card: 228 30% 7%;
+    --card-foreground: 210 20% 96%;
 
-    --primary: 262 83% 68%;
-    --primary-foreground: 224 71% 4%;
+    --primary: 262 80% 70%;
+    --primary-foreground: 228 30% 7%;
 
-    --secondary: 220 14% 14%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 228 20% 12%;
+    --secondary-foreground: 210 20% 90%;
 
-    --muted: 220 14% 14%;
-    --muted-foreground: 220 9% 64%;
+    --muted: 228 20% 12%;
+    --muted-foreground: 220 14% 58%;
 
-    --accent: 262 60% 22%;
+    --accent: 262 50% 18%;
     --accent-foreground: 262 90% 88%;
 
-    --destructive: 0 70% 55%;
+    --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
 
-    --success: 142 70% 45%;
-    --warning: 38 92% 55%;
+    --success: 142 70% 48%;
+    --warning: 38 92% 58%;
 
-    --border: 220 14% 18%;
-    --input: 220 14% 18%;
-    --ring: 262 83% 68%;
+    --border: 230 20% 14%;
+    --input: 228 20% 12%;
+    --ring: 262 80% 70%;
   }
 
   * {
@@ -79,8 +80,7 @@
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
   }
-  /* Subtle scrollbar */
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
@@ -107,11 +107,98 @@
     transform: translateX(-100%);
     @apply animate-shimmer;
   }
-  /* Faint mesh gradient for marketing-y surfaces */
+
+  /* Aurora animated gradient background */
+  .aurora-bg {
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 10%, hsl(262 80% 60% / 0.18) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 90% 5%, hsl(214 90% 60% / 0.15) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 60% at 50% 100%, hsl(300 70% 55% / 0.10) 0%, transparent 55%),
+      hsl(var(--background));
+  }
+
+  /* Dot grid pattern overlay */
+  .dot-grid::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, hsl(var(--foreground) / 0.07) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+  }
+
+  /* Glassmorphism card */
+  .glass {
+    background: hsl(var(--card) / 0.55);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  /* Gradient text — purple to blue */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(262 80% 75%), hsl(214 90% 70%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Glow effect on primary-colored elements */
+  .glow-primary {
+    box-shadow: 0 0 24px hsl(var(--primary) / 0.35), 0 0 60px hsl(var(--primary) / 0.10);
+  }
+  .glow-primary-sm {
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.2);
+  }
+
+  /* Animated gradient border */
+  .gradient-border {
+    position: relative;
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, hsl(262 80% 68%), hsl(214 90% 60%), hsl(300 70% 65%));
+    background-size: 300% 300%;
+    animation: border-flow 3s ease infinite;
+    z-index: -1;
+    opacity: 0.6;
+  }
+
+  /* AI pulse ring */
+  .ai-ring {
+    position: relative;
+  }
+  .ai-ring::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from 0deg,
+      hsl(262 80% 68% / 0),
+      hsl(262 80% 68% / 0.6),
+      hsl(214 90% 60% / 0.6),
+      hsl(262 80% 68% / 0)
+    );
+    animation: spin-slow 4s linear infinite;
+    z-index: -1;
+  }
+
+  /* Subtle mesh for marketing surfaces */
   .mesh-bg {
     background-image:
       radial-gradient(at 12% 14%, hsl(var(--primary) / 0.16) 0px, transparent 50%),
       radial-gradient(at 88% 10%, hsl(214 90% 60% / 0.14) 0px, transparent 50%),
-      radial-gradient(at 50% 92%, hsl(330 80% 60% / 0.10) 0px, transparent 50%);
+      radial-gradient(at 50% 92%, hsl(300 70% 55% / 0.10) 0px, transparent 50%);
   }
+}
+
+/* Custom property for smooth number transitions */
+@property --num {
+  syntax: '<integer>';
+  initial-value: 0;
+  inherits: false;
 }

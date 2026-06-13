@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bell, Save, Star } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -70,101 +71,113 @@ export default function ConfigurationsPage() {
         subtitle="Tune when leads fire and how aggressively we remind you."
       />
       <PageBody className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Star className="h-4 w-4 text-[hsl(var(--warning))]" /> Interest threshold
-            </CardTitle>
-            <CardDescription>
-              Calls whose AI-rated interest meets this score become a HIGH_INTEREST lead. Lower = more leads, higher = stricter.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {q.isLoading ? (
-              <Skeleton className="h-16" />
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={0.5}
-                    value={threshold}
-                    onChange={(e) => setThreshold(Number(e.target.value))}
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-right text-2xl font-semibold tabular-nums">
-                    {threshold.toFixed(1)}
-                  </span>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Star className="h-4 w-4 text-[hsl(var(--warning))]" /> Interest threshold
+              </CardTitle>
+              <CardDescription>
+                Calls whose AI-rated interest meets this score become a HIGH_INTEREST lead. Lower = more leads, higher = stricter.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {q.isLoading ? (
+                <Skeleton className="h-16" />
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      value={threshold}
+                      onChange={(e) => setThreshold(Number(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-right text-2xl font-semibold tabular-nums">
+                      {threshold.toFixed(1)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    At <b>{threshold.toFixed(1)}/10</b>, roughly the {bucketLabel(threshold)} of warm callers will trigger a lead.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  At <b>{threshold.toFixed(1)}/10</b>, roughly the {bucketLabel(threshold)} of warm callers will trigger a lead.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-primary" /> Reminder cadence
-            </CardTitle>
-            <CardDescription>
-              How often we ping your WhatsApp until you act on a pending lead.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {q.isLoading ? (
-              <Skeleton className="h-40" />
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Mode</Label>
-                    <Select value={mode} onChange={(e) => setMode(e.target.value as ReminderMode)}>
-                      <option value="FIXED">Fixed (every N min)</option>
-                      <option value="INCREMENT">Increment (back off over time)</option>
-                    </Select>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-primary" /> Reminder cadence
+              </CardTitle>
+              <CardDescription>
+                How often we ping your WhatsApp until you act on a pending lead.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {q.isLoading ? (
+                <Skeleton className="h-40" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Mode</Label>
+                      <Select value={mode} onChange={(e) => setMode(e.target.value as ReminderMode)}>
+                        <option value="FIXED">Fixed (every N min)</option>
+                        <option value="INCREMENT">Increment (back off over time)</option>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Base interval (minutes)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={MAX_INTERVAL_MIN}
+                        value={interval}
+                        onChange={(e) => setInterval(clamp(Number(e.target.value) || 1, 1, MAX_INTERVAL_MIN))}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Base interval (minutes)</Label>
+                    <Label>Max reminders (hard cap)</Label>
                     <Input
                       type="number"
                       min={1}
-                      max={MAX_INTERVAL_MIN}
-                      value={interval}
-                      onChange={(e) => setInterval(clamp(Number(e.target.value) || 1, 1, MAX_INTERVAL_MIN))}
+                      max={10}
+                      value={maxN}
+                      onChange={(e) => setMaxN(clamp(Number(e.target.value) || 1, 1, 10))}
                     />
                   </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Max reminders (hard cap)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={maxN}
-                    onChange={(e) => setMaxN(clamp(Number(e.target.value) || 1, 1, 10))}
-                  />
-                </div>
-                <div className="rounded-md border bg-muted/30 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Schedule preview
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {previewSchedule.map((m, i) => (
-                      <Badge key={i} variant="outline">
-                        +{m}m
-                      </Badge>
-                    ))}
+                  <div className="rounded-xl border border-border/40 bg-primary/5 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Schedule preview
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {previewSchedule.map((m, i) => (
+                        <Badge key={i} variant="outline" className="border-primary/20 text-primary">
+                          +{m}m
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
 
         <div className="lg:col-span-2 flex justify-end">
           <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>

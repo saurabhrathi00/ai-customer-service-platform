@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PhoneCall, Search, PhoneForwarded, Star, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -114,7 +115,12 @@ export default function CallsListPage() {
         subtitle="Every conversation your AI voice agent has had."
       />
       <PageBody className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <motion.div
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.05 }}
+        >
           <div className="flex flex-wrap gap-2">
             <FilterChip active={filter === 'all'} onClick={() => selectFilter('all')}>
               All
@@ -148,8 +154,13 @@ export default function CallsListPage() {
               />
             </div>
           </div>
-        </div>
+        </motion.div>
 
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.15 }}
+        >
         <Card>
           <CardContent className="p-0">
             {recent.isLoading ? (
@@ -200,7 +211,7 @@ export default function CallsListPage() {
                       return (
                         <tr
                           key={c.id}
-                          className={`border-b transition-colors last:border-0 hover:bg-accent/30 ${
+                          className={`border-b border-border/40 transition-colors last:border-0 hover:bg-primary/5 ${
                             checked ? 'bg-primary/5' : ''
                           }`}
                         >
@@ -257,6 +268,7 @@ export default function CallsListPage() {
             )}
           </CardContent>
         </Card>
+        </motion.div>
       </PageBody>
     </>
   );
@@ -277,7 +289,7 @@ function FilterChip({
       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
         active
           ? 'border-primary/40 bg-primary/10 text-primary'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent'
+          : 'border-border/40 bg-background text-muted-foreground hover:bg-primary/5'
       }`}
     >
       {children}

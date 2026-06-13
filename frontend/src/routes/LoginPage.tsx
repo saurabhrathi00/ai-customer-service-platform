@@ -4,8 +4,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Sparkles, Brain, PhoneCall, Star, Shield } from 'lucide-react';
 import * as React from 'react';
+import { motion } from 'framer-motion';
 
 import { Logo } from '@/components/app/Logo';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +21,19 @@ const schema = z.object({
 });
 
 type Values = z.infer<typeof schema>;
+
+const FEATURES = [
+  { icon: Brain, text: 'Multilingual STT and natural-sounding voice' },
+  { icon: Star, text: 'Auto-summaries and interest scoring' },
+  { icon: PhoneCall, text: 'Callback queue you can work in minutes' },
+  { icon: Shield, text: 'Strict per-business data isolation' },
+];
+
+const STATS = [
+  { value: '24/7', label: 'Availability' },
+  { value: '< 1s', label: 'Response time' },
+  { value: '99.9%', label: 'Uptime' },
+];
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -57,56 +71,113 @@ export default function LoginPage() {
   });
 
   return (
-    <div className="min-h-screen w-full mesh-bg">
+    <div className="min-h-screen w-full bg-background overflow-hidden">
       <div className="grid min-h-screen lg:grid-cols-2">
-        {/* Marketing column */}
-        <div className="relative hidden lg:flex flex-col justify-between p-12 text-foreground border-r">
-          <Logo />
-          <div className="max-w-md">
-            <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-              Your AI voice agent,
-              <br />
-              handling every call.
-            </h1>
-            <p className="mt-4 text-muted-foreground">
-              VoxAI answers your business calls 24/7 using the knowledge you
-              configure, summarises every conversation, and surfaces the leads
-              worth calling back.
-            </p>
-            <ul className="mt-8 space-y-3 text-sm">
-              {[
-                'Multilingual STT and natural-sounding voice',
-                'Auto-summaries and interest scoring',
-                'Callback queue you can work in minutes',
-                'Strict per-business data isolation',
-              ].map((f) => (
-                <li key={f} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  <span className="text-muted-foreground">{f}</span>
-                </li>
-              ))}
-            </ul>
+
+        {/* ── Left: marketing column ── */}
+        <div className="relative hidden lg:flex flex-col justify-between p-12 border-r border-border/40 overflow-hidden">
+          {/* Aurora background */}
+          <div className="absolute inset-0 aurora-bg" />
+          {/* Dot grid */}
+          <div className="absolute inset-0 dot-grid opacity-60" />
+
+          {/* Floating glow orbs */}
+          <div className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-primary/10 blur-3xl animate-glow-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 h-48 w-48 rounded-full bg-blue-500/8 blur-3xl animate-glow-pulse" style={{ animationDelay: '1.5s' }} />
+
+          <div className="relative z-10">
+            <Logo />
           </div>
-          <p className="text-xs text-muted-foreground">© VoxAI · All rights reserved</p>
+
+          <div className="relative z-10 max-w-md">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            >
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
+                <Sparkles className="h-3 w-3" />
+                Powered by Gemini AI
+              </div>
+              <h1 className="text-4xl font-bold leading-tight tracking-tight">
+                Your AI voice agent,
+                <br />
+                <span className="gradient-text">handling every call.</span>
+              </h1>
+              <p className="mt-4 text-muted-foreground leading-relaxed">
+                VoxAI answers your business calls 24/7 using the knowledge you
+                configure, summarises every conversation, and surfaces the leads
+                worth calling back.
+              </p>
+            </motion.div>
+
+            <motion.ul
+              className="mt-8 space-y-3"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.5 }}
+            >
+              {FEATURES.map(({ icon: Icon, text }, i) => (
+                <motion.li
+                  key={text}
+                  className="flex items-center gap-3 text-sm"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.08, duration: 0.35 }}
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-muted-foreground">{text}</span>
+                </motion.li>
+              ))}
+            </motion.ul>
+
+            {/* Stats row */}
+            <motion.div
+              className="mt-10 grid grid-cols-3 gap-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7, duration: 0.4 }}
+            >
+              {STATS.map(({ value, label }) => (
+                <div key={label} className="rounded-xl border border-border/40 bg-card/40 backdrop-blur-sm px-4 py-3 text-center">
+                  <p className="text-xl font-bold gradient-text">{value}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </motion.div>
+          </div>
+
+          <div className="relative z-10">
+            <p className="text-xs text-muted-foreground">© 2026 VoxAI · All rights reserved</p>
+          </div>
         </div>
 
-        {/* Form column */}
-        <div className="flex items-center justify-center px-6 py-10 lg:p-12">
-          <form
+        {/* ── Right: form column ── */}
+        <div className="relative flex items-center justify-center px-6 py-10 lg:p-12 overflow-hidden">
+          {/* Subtle background glow */}
+          <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+
+          <motion.form
             onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
-            className="w-full max-w-sm space-y-6"
+            className="relative w-full max-w-sm space-y-6"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <div className="lg:hidden">
+            <div className="lg:hidden mb-2">
               <Logo />
             </div>
+
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">Sign in</h2>
+              <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Welcome back. Enter your details to access the dashboard.
+                Sign in to access your AI dashboard.
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -120,10 +191,9 @@ export default function LoginPage() {
                   <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
                 )}
               </div>
+
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                </div>
+                <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Input
                     id="password"
@@ -137,7 +207,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPwd((s) => !s)}
                     aria-label={showPwd ? 'Hide password' : 'Show password'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -151,23 +221,28 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              >
                 {error}
-              </div>
+              </motion.div>
             )}
 
-            <Button type="submit" loading={mutation.isPending} className="w-full">
+            <Button type="submit" loading={mutation.isPending} className="w-full gap-2">
               Sign in <ArrowRight className="h-4 w-4" />
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
               New here?{' '}
-              <Link to="/register" className="font-medium text-primary hover:underline">
+              <Link to="/register" className="font-semibold text-primary hover:underline">
                 Create an account
               </Link>
             </p>
-          </form>
+          </motion.form>
         </div>
+
       </div>
     </div>
   );

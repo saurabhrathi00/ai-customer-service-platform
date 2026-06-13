@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
 import {
   PhoneCall,
   PhoneForwarded,
@@ -12,6 +13,8 @@ import {
   Gauge,
   CalendarDays,
   Timer,
+  Sparkles,
+  Brain,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -41,6 +44,15 @@ import {
 } from '@/features/calls/helpers';
 import { useSummariesByCallId } from '@/features/calls/useSummaries';
 import { formatDuration } from '@/lib/utils';
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.07, duration: 0.4, ease: 'easeOut' as const },
+  }),
+};
 
 export default function DashboardPage() {
   const businessId = useAuthStore((s) => s.businessId);
@@ -94,259 +106,290 @@ export default function DashboardPage() {
         onOpenChange={setDemoOpen}
         demoSecondsRemaining={demoSeconds}
       />
+
       <PageBody className="space-y-6">
+        {/* AI status banner */}
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 backdrop-blur-sm"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15">
+            <Brain className="h-4 w-4 text-primary animate-pulse" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">AI Voice Agent is running</p>
+            <p className="text-xs text-muted-foreground">Handling calls in real-time · Processing with Gemini</p>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-medium text-success">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+            </span>
+            Live
+          </div>
+        </motion.div>
+
+        {/* KPI cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Calls today"
-            value={recent.isLoading ? null : String(stats.today)}
-            delta={stats.todayDelta}
-            icon={PhoneCall}
-            tone="primary"
-          />
-          <KpiCard
-            label="Calls this week"
-            value={recent.isLoading ? null : String(stats.week)}
-            delta={stats.weekDelta}
-            icon={TrendingUp}
-            tone="default"
-          />
-          <KpiCard
-            label="Callbacks pending"
-            value={recent.isLoading ? null : String(stats.callbacks)}
-            icon={PhoneForwarded}
-            tone="warning"
-            hint={stats.callbacks > 0 ? 'Work the queue →' : undefined}
-            hintTo="/calls?filter=callbacks"
-          />
-          <KpiCard
-            label="Avg interest"
-            value={recent.isLoading ? null : stats.avgInterest != null ? stats.avgInterest.toFixed(1) : '—'}
-            icon={Star}
-            tone="success"
-          />
+          {[
+            { label: 'Calls today', value: recent.isLoading ? null : String(stats.today), delta: stats.todayDelta, icon: PhoneCall, tone: 'primary' as const },
+            { label: 'Calls this week', value: recent.isLoading ? null : String(stats.week), delta: stats.weekDelta, icon: TrendingUp, tone: 'default' as const },
+            { label: 'Callbacks pending', value: recent.isLoading ? null : String(stats.callbacks), icon: PhoneForwarded, tone: 'warning' as const, hint: stats.callbacks > 0 ? 'Work the queue →' : undefined, hintTo: '/calls?filter=callbacks' },
+            { label: 'Avg interest', value: recent.isLoading ? null : stats.avgInterest != null ? stats.avgInterest.toFixed(1) : '—', icon: Star, tone: 'success' as const },
+          ].map((kpi, i) => (
+            <motion.div key={kpi.label} custom={i} variants={fadeUp} initial="hidden" animate="visible">
+              <KpiCard {...kpi} />
+            </motion.div>
+          ))}
         </div>
 
+        {/* Plan usage */}
         {sub.data?.plan ? (
+          <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      Plan Usage
+                    </CardTitle>
+                    <CardDescription>
+                      {sub.data.plan.name} plan · {sub.data.daysRemaining} days remaining
+                    </CardDescription>
+                  </div>
+                  <Link
+                    to="/settings"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    Manage <ArrowUpRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                  <UsageMeter
+                    label="Calls used"
+                    used={sub.data.callsUsed}
+                    total={sub.data.plan.callsIncluded}
+                    unit="calls"
+                    icon={PhoneCall}
+                  />
+                  <UsageMeter
+                    label="Minutes used"
+                    used={sub.data.minutesUsed}
+                    total={null}
+                    unit="min"
+                    icon={Timer}
+                  />
+                  <UsageItem
+                    label="Calls remaining"
+                    value={String(sub.data.callsRemaining)}
+                    icon={Gauge}
+                    tone={sub.data.callsRemaining <= 10 ? 'warning' : 'success'}
+                  />
+                  <UsageItem
+                    label="Days remaining"
+                    value={String(sub.data.daysRemaining)}
+                    icon={CalendarDays}
+                    tone={sub.data.daysRemaining <= 5 ? 'warning' : 'default'}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : !sub.isLoading && (
+          <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible">
+            <Card>
+              <CardContent className="flex items-center justify-between p-6">
+                <div>
+                  <p className="font-semibold">No active plan</p>
+                  <p className="text-sm text-muted-foreground">
+                    Subscribe to a plan to start using your AI voice agent.
+                  </p>
+                </div>
+                <Link to="/pricing">
+                  <Button>View Plans</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Charts row */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <motion.div custom={5} variants={fadeUp} initial="hidden" animate="visible" className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Calls / day</CardTitle>
+                    <CardDescription>Last 14 days</CardDescription>
+                  </div>
+                  <Badge variant="outline">{recent.data?.length ?? 0} total</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {recent.isLoading ? (
+                  <Skeleton className="h-64" />
+                ) : stats.series.every((d) => d.count === 0) ? (
+                  <EmptyState
+                    icon={<PhoneCall className="h-5 w-5" />}
+                    title="No calls yet"
+                    description="When customers start ringing your AI number, you'll see the activity here."
+                  />
+                ) : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={stats.series} margin={{ left: -20, right: 8, top: 10 }}>
+                        <defs>
+                          <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="hsl(262 80% 68%)" stopOpacity={0.5} />
+                            <stop offset="60%" stopColor="hsl(262 80% 68%)" stopOpacity={0.1} />
+                            <stop offset="100%" stopColor="hsl(262 80% 68%)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={32}
+                        />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Area
+                          type="monotone"
+                          dataKey="count"
+                          stroke="hsl(262 80% 68%)"
+                          strokeWidth={2.5}
+                          fill="url(#callsGradient)"
+                          dot={false}
+                          activeDot={{ r: 4, fill: 'hsl(262 80% 68%)', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div custom={6} variants={fadeUp} initial="hidden" animate="visible">
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick stats</CardTitle>
+                <CardDescription>Snapshot of recent activity</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <StatRow label="Avg duration" value={formatDuration(stats.avgDuration)} icon={Clock} />
+                <StatRow
+                  label="Helpful feedback"
+                  value={`${stats.helpfulPct ?? 0}%`}
+                  icon={Star}
+                />
+                <StatRow
+                  label="Hot leads (≥4 ★)"
+                  value={String(stats.hotLeads)}
+                  icon={TrendingUp}
+                />
+                <StatRow label="Total calls" value={String(stats.total)} icon={PhoneCall} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* Recent calls */}
+        <motion.div custom={7} variants={fadeUp} initial="hidden" animate="visible">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Plan Usage</CardTitle>
-                  <CardDescription>
-                    {sub.data.plan.name} plan — {sub.data.daysRemaining} days remaining
-                  </CardDescription>
+                  <CardTitle>Recent calls</CardTitle>
+                  <CardDescription>The five most recent conversations</CardDescription>
                 </div>
                 <Link
-                  to="/settings"
+                  to="/calls"
                   className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
                 >
-                  Manage <ArrowUpRight className="h-4 w-4" />
+                  View all <ArrowUpRight className="h-4 w-4" />
                 </Link>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                <UsageMeter
-                  label="Calls used"
-                  used={sub.data.callsUsed}
-                  total={sub.data.plan.callsIncluded}
-                  unit="calls"
-                  icon={PhoneCall}
-                />
-                <UsageMeter
-                  label="Minutes used"
-                  used={sub.data.minutesUsed}
-                  total={null}
-                  unit="min"
-                  icon={Timer}
-                />
-                <UsageItem
-                  label="Calls remaining"
-                  value={String(sub.data.callsRemaining)}
-                  icon={Gauge}
-                  tone={sub.data.callsRemaining <= 10 ? 'warning' : 'success'}
-                />
-                <UsageItem
-                  label="Days remaining"
-                  value={String(sub.data.daysRemaining)}
-                  icon={CalendarDays}
-                  tone={sub.data.daysRemaining <= 5 ? 'warning' : 'default'}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        ) : !sub.isLoading && (
-          <Card>
-            <CardContent className="flex items-center justify-between p-6">
-              <div>
-                <p className="font-semibold">No active plan</p>
-                <p className="text-sm text-muted-foreground">
-                  Subscribe to a plan to start using your AI voice agent.
-                </p>
-              </div>
-              <Link to="/pricing">
-                <Button>View Plans</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Calls / day</CardTitle>
-                  <CardDescription>Last 14 days</CardDescription>
-                </div>
-                <Badge variant="outline">{recent.data?.length ?? 0} total</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {recent.isLoading ? (
-                <Skeleton className="h-64" />
-              ) : stats.series.every((d) => d.count === 0) ? (
+                <div className="p-4 space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14" />
+                  ))}
+                </div>
+              ) : (recent.data?.length ?? 0) === 0 ? (
                 <EmptyState
                   icon={<PhoneCall className="h-5 w-5" />}
                   title="No calls yet"
-                  description="When customers start ringing your AI number, you'll see the activity here."
+                  description="Once your phone number is wired up, every call lands here within seconds of ending."
                 />
               ) : (
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={stats.series} margin={{ left: -20, right: 8, top: 10 }}>
-                      <defs>
-                        <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="hsl(262 83% 58%)" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="hsl(262 83% 58%)" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                        tickLine={false}
-                        axisLine={false}
-                        width={32}
-                      />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Area
-                        type="monotone"
-                        dataKey="count"
-                        stroke="hsl(262 83% 58%)"
-                        strokeWidth={2}
-                        fill="url(#callsGradient)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                <ul className="divide-y divide-border/40">
+                  {recent.data!.slice(0, 5).map((c, i) => {
+                    const fb = feedbackLabel(c.feedbackScore);
+                    const s = summaryMap.get(c.id);
+                    const summaryText = s?.summaryText ?? c.callSummary;
+                    const interest = s?.interestRating ?? c.interestRating;
+                    const callback = s?.callbackNeeded ?? c.callbackRequested;
+                    return (
+                      <motion.li
+                        key={c.id}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.4 + i * 0.06, duration: 0.3 }}
+                      >
+                        <Link
+                          to={`/calls/${c.id}`}
+                          className="flex items-center gap-4 px-4 py-3 transition-all duration-200 hover:bg-primary/5 group"
+                        >
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary transition-all duration-200 group-hover:bg-primary/20 group-hover:scale-105">
+                            <PhoneCall className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {s?.callerName ?? c.customerName ?? c.customerPhone ?? 'Anonymous caller'}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {summaryText ?? 'Summary pending…'}
+                            </p>
+                          </div>
+                          <div className="hidden sm:flex flex-col items-end gap-1">
+                            <span className="text-xs text-muted-foreground">
+                              {callRelative(c.callStartedAt)} · {formatDuration(callDuration(c))}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {callback && <Badge variant="warning">Callback</Badge>}
+                              {interest != null && (
+                                <Badge variant={interestColor(interest) as never}>
+                                  {interest}/10 ★
+                                </Badge>
+                              )}
+                              {fb && <Badge variant={fb.variant}>{fb.label}</Badge>}
+                            </div>
+                          </div>
+                        </Link>
+                      </motion.li>
+                    );
+                  })}
+                </ul>
               )}
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick stats</CardTitle>
-              <CardDescription>Snapshot of recent activity</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <StatRow label="Avg duration" value={formatDuration(stats.avgDuration)} icon={Clock} />
-              <StatRow
-                label="Helpful feedback"
-                value={`${stats.helpfulPct ?? 0}%`}
-                icon={Star}
-              />
-              <StatRow
-                label="Hot leads (≥4 ★)"
-                value={String(stats.hotLeads)}
-                icon={TrendingUp}
-              />
-              <StatRow label="Total calls" value={String(stats.total)} icon={PhoneCall} />
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recent calls</CardTitle>
-                <CardDescription>The five most recent conversations</CardDescription>
-              </div>
-              <Link
-                to="/calls"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                View all <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {recent.isLoading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14" />
-                ))}
-              </div>
-            ) : (recent.data?.length ?? 0) === 0 ? (
-              <EmptyState
-                icon={<PhoneCall className="h-5 w-5" />}
-                title="No calls yet"
-                description="Once your phone number is wired up, every call lands here within seconds of ending."
-              />
-            ) : (
-              <ul className="divide-y">
-                {recent.data!.slice(0, 5).map((c) => {
-                  const fb = feedbackLabel(c.feedbackScore);
-                  const s = summaryMap.get(c.id);
-                  const summaryText = s?.summaryText ?? c.callSummary;
-                  const interest = s?.interestRating ?? c.interestRating;
-                  const callback = s?.callbackNeeded ?? c.callbackRequested;
-                  return (
-                    <li key={c.id}>
-                      <Link
-                        to={`/calls/${c.id}`}
-                        className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-accent/40"
-                      >
-                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-                          <PhoneCall className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {s?.callerName ?? c.customerName ?? c.customerPhone ?? 'Anonymous caller'}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {summaryText ?? 'Summary pending…'}
-                          </p>
-                        </div>
-                        <div className="hidden sm:flex flex-col items-end gap-1">
-                          <span className="text-xs text-muted-foreground">
-                            {callRelative(c.callStartedAt)} · {formatDuration(callDuration(c))}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            {callback && <Badge variant="warning">Callback</Badge>}
-                            {interest != null && (
-                              <Badge variant={interestColor(interest) as never}>
-                                {interest}/10 ★
-                              </Badge>
-                            )}
-                            {fb && <Badge variant={fb.variant}>{fb.label}</Badge>}
-                          </div>
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        </motion.div>
       </PageBody>
     </>
   );
@@ -363,17 +406,19 @@ interface KpiProps {
 }
 function KpiCard({ label, value, delta, icon: Icon, tone, hint, hintTo }: KpiProps) {
   const toneClass: Record<KpiProps['tone'], string> = {
-    primary: 'bg-primary/10 text-primary',
-    default: 'bg-accent text-accent-foreground',
-    success: 'bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]',
-    warning: 'bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]',
+    primary: 'bg-primary/15 text-primary shadow-primary/20',
+    default: 'bg-accent text-accent-foreground shadow-accent/20',
+    success: 'bg-[hsl(var(--success))]/15 text-[hsl(var(--success))] shadow-[hsl(var(--success))]/20',
+    warning: 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] shadow-[hsl(var(--warning))]/20',
   };
   return (
-    <Card>
+    <Card className="relative overflow-hidden group">
+      {/* Subtle corner glow */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <div className={`grid h-9 w-9 place-items-center rounded-lg ${toneClass[tone]}`}>
+          <div className={`grid h-9 w-9 place-items-center rounded-lg shadow-lg ${toneClass[tone]}`}>
             <Icon className="h-4 w-4" />
           </div>
         </div>
@@ -381,11 +426,11 @@ function KpiCard({ label, value, delta, icon: Icon, tone, hint, hintTo }: KpiPro
           {value === null ? (
             <Skeleton className="h-8 w-16" />
           ) : (
-            <span className="text-3xl font-semibold tracking-tight">{value}</span>
+            <span className="text-3xl font-bold tracking-tight">{value}</span>
           )}
           {delta != null && delta !== 0 && (
             <span
-              className={`text-xs font-medium ${delta > 0 ? 'text-[hsl(var(--success))]' : 'text-destructive'}`}
+              className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${delta > 0 ? 'bg-success/10 text-[hsl(var(--success))]' : 'bg-destructive/10 text-destructive'}`}
             >
               {delta > 0 ? '+' : ''}
               {delta}
@@ -434,9 +479,9 @@ interface ChartTooltipProps {
 function ChartTooltip({ active, label, payload }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md bg-card">
-      <p className="font-medium">{label}</p>
-      <p className="text-muted-foreground">{payload[0].value} calls</p>
+    <div className="rounded-lg border border-border/50 bg-card/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm">
+      <p className="font-semibold">{label}</p>
+      <p className="text-muted-foreground mt-0.5">{payload[0].value} calls</p>
     </div>
   );
 }
@@ -461,18 +506,18 @@ function UsageMeter({
         <Icon className="h-4 w-4" />
         {label}
       </div>
-      <p className="text-2xl font-semibold tracking-tight">
+      <p className="text-2xl font-bold tracking-tight">
         {used}
         {total != null && <span className="text-base font-normal text-muted-foreground">/{total}</span>}
         <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>
       </p>
       {pct != null && (
-        <div className="h-2 w-full rounded-full bg-muted">
-          <div
-            className={`h-full rounded-full transition-all ${
-              pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-primary'
-            }`}
-            style={{ width: `${pct}%` }}
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <motion.div
+            className={`h-full rounded-full ${pct >= 90 ? 'bg-destructive' : pct >= 70 ? 'bg-warning' : 'bg-primary'}`}
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }}
           />
         </div>
       )}
@@ -502,7 +547,7 @@ function UsageItem({
         <Icon className="h-4 w-4" />
         {label}
       </div>
-      <p className={`text-2xl font-semibold tracking-tight ${toneText[tone]}`}>{value}</p>
+      <p className={`text-2xl font-bold tracking-tight ${toneText[tone]}`}>{value}</p>
     </div>
   );
 }

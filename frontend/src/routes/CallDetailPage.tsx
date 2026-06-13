@@ -15,7 +15,9 @@ import {
   HelpCircle,
   AlertCircle,
   Trash2,
+  Brain,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
@@ -124,13 +126,21 @@ export default function CallDetailPage() {
             description="This call may have been removed, or you may not have access to it."
           />
         ) : (
-          <div className="grid gap-6 lg:grid-cols-3">
+          <motion.div
+            className="grid gap-6 lg:grid-cols-3"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
             <div className="space-y-6 lg:col-span-2">
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>AI summary</CardTitle>
+                      <CardTitle className="flex items-center gap-2">
+                        <Brain className="h-4 w-4 text-primary" />
+                        <span className="gradient-text">AI summary</span>
+                      </CardTitle>
                       {summary?.queryType && (
                         <CardDescription className="mt-1 capitalize">
                           {summary.queryType.replace(/[_-]/g, ' ').toLowerCase()}
@@ -144,7 +154,7 @@ export default function CallDetailPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {summaryText ? (
-                    <p className="text-sm leading-6 whitespace-pre-wrap">{summaryText}</p>
+                    <p className="border-l-2 border-primary/30 pl-3 text-sm leading-6 whitespace-pre-wrap">{summaryText}</p>
                   ) : (
                     <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                       Summary is still being generated. It usually lands a few seconds after the call ends.
@@ -208,81 +218,93 @@ export default function CallDetailPage() {
             </div>
 
             <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Caller</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <Row label="Name" value={summary?.callerName ?? call.customerName ?? '—'} />
-                  <Row
-                    label="Phone"
-                    value={summary?.customerPhone ?? call.customerPhone ?? '—'}
-                    icon={<Phone className="h-3.5 w-3.5" />}
-                  />
-                  <Row label="Provider" value={call.provider} />
-                  <Row
-                    label="Call ID"
-                    value={call.providerCallId}
-                    valueClassName="font-mono text-xs"
-                  />
-                </CardContent>
-              </Card>
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Caller</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <Row label="Name" value={summary?.callerName ?? call.customerName ?? '—'} />
+                    <Row
+                      label="Phone"
+                      value={summary?.customerPhone ?? call.customerPhone ?? '—'}
+                      icon={<Phone className="h-3.5 w-3.5" />}
+                    />
+                    <Row label="Provider" value={call.provider} />
+                    <Row
+                      label="Call ID"
+                      value={call.providerCallId}
+                      valueClassName="font-mono text-xs"
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Outcome</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <Row
-                    label="Duration"
-                    value={formatDuration(callDuration(call))}
-                    icon={<Clock className="h-3.5 w-3.5" />}
-                  />
-                  <Row
-                    label="Interest"
-                    value={
-                      interestRating != null ? (
-                        <Badge variant={interestColor(interestRating) as never}>
-                          {interestRating}/10 ★
-                        </Badge>
-                      ) : (
-                        '—'
-                      )
-                    }
-                    icon={<Star className="h-3.5 w-3.5" />}
-                  />
-                  <Row
-                    label="Feedback"
-                    value={
-                      call.feedbackScore == null ? (
-                        '—'
-                      ) : call.feedbackScore === 1 ? (
-                        <Badge variant="success">
-                          <ThumbsUp className="mr-1 h-3 w-3" /> Helpful
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive">
-                          <ThumbsDown className="mr-1 h-3 w-3" /> Not helpful
-                        </Badge>
-                      )
-                    }
-                  />
-                  <Row
-                    label="Callback"
-                    value={
-                      callbackNeeded ? (
-                        <Badge variant="warning">
-                          <PhoneForwarded className="mr-1 h-3 w-3" /> Pending
-                        </Badge>
-                      ) : (
-                        'Not requested'
-                      )
-                    }
-                  />
-                </CardContent>
-              </Card>
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut', delay: 0.2 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Outcome</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <Row
+                      label="Duration"
+                      value={formatDuration(callDuration(call))}
+                      icon={<Clock className="h-3.5 w-3.5" />}
+                    />
+                    <Row
+                      label="Interest"
+                      value={
+                        interestRating != null ? (
+                          <Badge variant={interestColor(interestRating) as never}>
+                            {interestRating}/10 ★
+                          </Badge>
+                        ) : (
+                          '—'
+                        )
+                      }
+                      icon={<Star className="h-3.5 w-3.5" />}
+                    />
+                    <Row
+                      label="Feedback"
+                      value={
+                        call.feedbackScore == null ? (
+                          '—'
+                        ) : call.feedbackScore === 1 ? (
+                          <Badge variant="success">
+                            <ThumbsUp className="mr-1 h-3 w-3" /> Helpful
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">
+                            <ThumbsDown className="mr-1 h-3 w-3" /> Not helpful
+                          </Badge>
+                        )
+                      }
+                    />
+                    <Row
+                      label="Callback"
+                      value={
+                        callbackNeeded ? (
+                          <Badge variant="warning">
+                            <PhoneForwarded className="mr-1 h-3 w-3" /> Pending
+                          </Badge>
+                        ) : (
+                          'Not requested'
+                        )
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         )}
       </PageBody>
     </>
@@ -299,7 +321,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2 border-t pt-4">
+    <div className="space-y-2 border-t border-border/40 pt-4">
       <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {icon} {label}
       </div>
@@ -359,7 +381,7 @@ function TurnRow({ turn }: { turn: TranscriptTurn }) {
     <li className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div
         className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold ${
-          isUser ? 'bg-secondary text-secondary-foreground' : 'bg-primary/10 text-primary'
+          isUser ? 'bg-secondary text-secondary-foreground' : 'bg-primary/10 text-primary border border-primary/20'
         }`}
       >
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
@@ -368,7 +390,7 @@ function TurnRow({ turn }: { turn: TranscriptTurn }) {
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-6 ${
           isUser
             ? 'bg-secondary text-secondary-foreground rounded-tr-sm'
-            : 'bg-primary/10 text-foreground rounded-tl-sm'
+            : 'bg-primary/10 text-foreground rounded-tl-sm border border-primary/20'
         }`}
       >
         {text}

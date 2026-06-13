@@ -60,11 +60,47 @@ export default {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },
+        aurora: {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { opacity: '0.4', transform: 'scale(1)' },
+          '50%': { opacity: '0.9', transform: 'scale(1.08)' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+        'gradient-x': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        'spin-slow': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(360deg)' },
+        },
+        'border-flow': {
+          '0%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+          '100%': { backgroundPosition: '0% 50%' },
+        },
+        'count-in': {
+          from: { opacity: '0', transform: 'translateY(10px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 200ms ease-out',
         'slide-up': 'slide-up 240ms ease-out',
         shimmer: 'shimmer 1.6s infinite',
+        aurora: 'aurora 8s ease infinite',
+        'glow-pulse': 'glow-pulse 2.5s ease-in-out infinite',
+        float: 'float 4s ease-in-out infinite',
+        'gradient-x': 'gradient-x 4s ease infinite',
+        'spin-slow': 'spin-slow 8s linear infinite',
+        'border-flow': 'border-flow 3s ease infinite',
+        'count-in': 'count-in 400ms ease-out',
       },
     },
   },

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Inbox, Phone, Star, ArrowRight, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -49,25 +50,31 @@ export default function LeadsListPage() {
         subtitle="Calls that need your attention. Approve, decline, or dismiss."
       />
       <PageBody>
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'pending' | 'handled')}>
-          <TabsList>
-            <TabsTrigger value="pending">
-              Pending
-              {pending.length > 0 && (
-                <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                  {pending.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="handled">Handled</TabsTrigger>
-          </TabsList>
-          <TabsContent value="pending">
-            <LeadList rows={pending} loading={q.isLoading} emptyMessage="No pending leads." />
-          </TabsContent>
-          <TabsContent value="handled">
-            <LeadList rows={handled} loading={q.isLoading} emptyMessage="Nothing handled yet." />
-          </TabsContent>
-        </Tabs>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.05 }}
+        >
+          <Tabs value={tab} onValueChange={(v) => setTab(v as 'pending' | 'handled')}>
+            <TabsList>
+              <TabsTrigger value="pending">
+                Pending
+                {pending.length > 0 && (
+                  <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                    {pending.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="handled">Handled</TabsTrigger>
+            </TabsList>
+            <TabsContent value="pending">
+              <LeadList rows={pending} loading={q.isLoading} emptyMessage="No pending leads." />
+            </TabsContent>
+            <TabsContent value="handled">
+              <LeadList rows={handled} loading={q.isLoading} emptyMessage="Nothing handled yet." />
+            </TabsContent>
+          </Tabs>
+        </motion.div>
       </PageBody>
     </>
   );
@@ -109,12 +116,17 @@ function LeadList({
   return (
     <Card>
       <CardContent className="p-0">
-        <ul className="divide-y">
-          {rows.map((l) => (
-            <li key={l.id}>
+        <ul className="divide-y divide-border/40">
+          {rows.map((l, index) => (
+            <motion.li
+              key={l.id}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.06, duration: 0.3 }}
+            >
               <Link
                 to={`/leads/${l.id}`}
-                className="grid grid-cols-[1fr_auto] items-start gap-4 p-4 transition-colors hover:bg-accent/40"
+                className="grid grid-cols-[1fr_auto] items-start gap-4 p-4 transition-colors hover:bg-primary/5"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -155,7 +167,7 @@ function LeadList({
                 </div>
                 <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground shrink-0" />
               </Link>
-            </li>
+            </motion.li>
           ))}
         </ul>
       </CardContent>

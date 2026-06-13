@@ -15,6 +15,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { motion } from 'framer-motion';
 
 import { PageBody, PageHeader } from '@/components/app/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -130,7 +131,12 @@ export default function LeadDetailPage() {
             description="It may have been removed, or you may not have access."
           />
         ) : (
-          <div className="grid gap-6 lg:grid-cols-3">
+          <motion.div
+            className="grid gap-6 lg:grid-cols-3"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
             <div className="space-y-6 lg:col-span-2">
               <Card>
                 <CardHeader>
@@ -149,7 +155,9 @@ export default function LeadDetailPage() {
                     )}
                   </div>
                   <CardTitle className="mt-2">
-                    {lead.customerName ?? lead.customerPhone ?? 'Anonymous caller'}
+                    <span className="gradient-text">
+                      {lead.customerName ?? lead.customerPhone ?? 'Anonymous caller'}
+                    </span>
                   </CardTitle>
                   {lead.summary && (
                     <CardDescription className="mt-1 leading-6">
@@ -176,7 +184,9 @@ export default function LeadDetailPage() {
               {!isTerminal ? (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Take action</CardTitle>
+                    <CardTitle>
+                      <span className="gradient-text">Take action</span>
+                    </CardTitle>
                     <CardDescription>
                       {isAppointment
                         ? 'Confirm with the slot you want to commit to, or decline with a reason.'
@@ -230,7 +240,7 @@ export default function LeadDetailPage() {
                     </div>
 
                     {isAppointment && (
-                      <details className="rounded-lg border bg-muted/30 p-4">
+                      <details className="rounded-lg border border-border/40 bg-primary/[0.03] p-4">
                         <summary className="cursor-pointer text-sm font-medium text-destructive">
                           Decline with reason
                         </summary>
@@ -290,53 +300,65 @@ export default function LeadDetailPage() {
             </div>
 
             <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Caller</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <DetailRow label="Name" value={lead.customerName ?? '—'} />
-                  <DetailRow
-                    label="Phone"
-                    value={lead.customerPhone ?? '—'}
-                    icon={<Phone className="h-3.5 w-3.5" />}
-                    valueClassName="font-mono text-sm font-medium text-right"
-                  />
-                  <DetailRow label="Language" value={lead.callerLanguage ?? '—'} />
-                  <DetailRow
-                    label="Captured"
-                    value={leadAge(lead)}
-                    icon={<Clock className="h-3.5 w-3.5" />}
-                  />
-                </CardContent>
-              </Card>
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Caller</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <DetailRow label="Name" value={lead.customerName ?? '—'} />
+                    <DetailRow
+                      label="Phone"
+                      value={lead.customerPhone ?? '—'}
+                      icon={<Phone className="h-3.5 w-3.5" />}
+                      valueClassName="font-mono text-sm font-medium text-right"
+                    />
+                    <DetailRow label="Language" value={lead.callerLanguage ?? '—'} />
+                    <DetailRow
+                      label="Captured"
+                      value={leadAge(lead)}
+                      icon={<Clock className="h-3.5 w-3.5" />}
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Notifications</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <DetailRow
-                    label="Reminders sent"
-                    value={String(lead.remindersSent)}
-                    icon={<MessageSquare className="h-3.5 w-3.5" />}
-                  />
-                  <DetailRow
-                    label="Owner notified"
-                    value={lead.ownerNotifiedAt ? '✓' : 'Queued'}
-                  />
-                  <DetailRow
-                    label="Customer notified"
-                    value={
-                      lead.customerNotifiedAt ? '✓'
-                        : lead.status === 'IGNORED' ? 'n/a'
-                        : 'Queued'
-                    }
-                  />
-                </CardContent>
-              </Card>
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut', delay: 0.2 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Notifications</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <DetailRow
+                      label="Reminders sent"
+                      value={String(lead.remindersSent)}
+                      icon={<MessageSquare className="h-3.5 w-3.5" />}
+                    />
+                    <DetailRow
+                      label="Owner notified"
+                      value={lead.ownerNotifiedAt ? '✓' : 'Queued'}
+                    />
+                    <DetailRow
+                      label="Customer notified"
+                      value={
+                        lead.customerNotifiedAt ? '✓'
+                          : lead.status === 'IGNORED' ? 'n/a'
+                          : 'Queued'
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         )}
       </PageBody>
     </>
