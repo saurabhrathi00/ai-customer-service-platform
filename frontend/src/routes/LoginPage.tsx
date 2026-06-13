@@ -18,6 +18,7 @@ import { Logo } from '@/components/app/Logo';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
+import { CursorTrail } from '@/components/ui/CursorTrail';
 import { auth } from '@/api/resources';
 import { isAuthenticated, useAuthStore } from '@/store/auth';
 
@@ -134,6 +135,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full bg-background overflow-hidden lg:cursor-none">
+
+      {/* ── Cursor trail ── */}
+      <CursorTrail />
 
       {/* ── Custom cursor (desktop only) ── */}
       {/* dot */}
