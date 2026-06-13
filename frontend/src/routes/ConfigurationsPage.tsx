@@ -132,7 +132,7 @@ export default function ConfigurationsPage() {
                 <Skeleton className="h-40" />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Mode</Label>
                       <Select value={mode} onChange={(e) => setMode(e.target.value as ReminderMode)}>

@@ -90,7 +90,7 @@ export function BusinessProfileCard() {
                 <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Category</Label>
                 <Input placeholder="e.g. Dental clinic" {...form.register('category')} />
@@ -100,7 +100,7 @@ export function BusinessProfileCard() {
                 <Input placeholder="City, country" {...form.register('location')} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Operating hours</Label>
                 <Input placeholder="Mon–Sat 9am–7pm" {...form.register('operatingHours')} />

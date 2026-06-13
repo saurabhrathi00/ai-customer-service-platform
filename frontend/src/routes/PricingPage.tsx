@@ -185,7 +185,7 @@ export default function PricingPage() {
 
         {/* CTA section */}
         <motion.div
-          className="relative mt-20 overflow-hidden rounded-2xl border border-primary/20 bg-card/60 p-10 text-center backdrop-blur-sm"
+          className="relative mt-20 overflow-hidden rounded-2xl border border-primary/20 bg-card/60 p-6 sm:p-10 text-center backdrop-blur-sm"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.5 }}

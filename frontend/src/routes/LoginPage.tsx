@@ -123,7 +123,7 @@ export default function LoginPage() {
   function onFormLeave() { formNormX.set(0.5); formNormY.set(0.5); }
 
   return (
-    <div className="min-h-screen w-full bg-background overflow-hidden lg:cursor-none">
+    <div className="min-h-screen w-full bg-background overflow-x-hidden lg:cursor-none">
 
       {/* ── Top nav ── */}
       <header className="fixed top-0 inset-x-0 z-[190] flex items-center justify-between px-6 py-3 border-b border-border/30 bg-background/80 backdrop-blur-md">
@@ -278,7 +278,7 @@ export default function LoginPage() {
             </div>
 
             {/* Form card */}
-            <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xl p-8 space-y-6"
+            <div className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xl p-5 sm:p-8 space-y-6"
                  style={{ boxShadow: 'inset 0 1px 0 hsl(0 0% 100% / 0.06), 0 20px 60px hsl(0 0% 0% / 0.30)' }}>
               <div>
                 <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>

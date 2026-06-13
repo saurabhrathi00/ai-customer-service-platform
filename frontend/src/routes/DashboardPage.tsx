@@ -140,7 +140,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex-1">
             <p className="text-sm font-medium">AI Voice Agent is running</p>
-            <p className="text-xs text-muted-foreground">Handling calls in real-time · Processing with Gemini</p>
+            <p className="hidden sm:block text-xs text-muted-foreground">Handling calls in real-time · Processing with Gemini</p>
           </div>
           <div className="flex items-center gap-1.5 text-xs font-medium text-success">
             <span className="relative flex h-1.5 w-1.5">
@@ -223,7 +223,7 @@ export default function DashboardPage() {
         ) : !sub.isLoading && (
           <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible">
             <Card>
-              <CardContent className="flex items-center justify-between p-6">
+              <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6">
                 <div>
                   <p className="font-semibold">No active plan</p>
                   <p className="text-sm text-muted-foreground">
