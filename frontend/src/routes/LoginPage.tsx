@@ -80,8 +80,8 @@ export default function LoginPage() {
   const cursorY = useMotionValue(-200);
   const dotX  = useSpring(cursorX, { stiffness: 700, damping: 40, mass: 0.4 });
   const dotY  = useSpring(cursorY, { stiffness: 700, damping: 40, mass: 0.4 });
-  const ringX = useSpring(cursorX, { stiffness: 220, damping: 30, mass: 0.7 });
-  const ringY = useSpring(cursorY, { stiffness: 220, damping: 30, mass: 0.7 });
+  const ringX = useSpring(cursorX, { stiffness: 550, damping: 38, mass: 0.5 });
+  const ringY = useSpring(cursorY, { stiffness: 550, damping: 38, mass: 0.5 });
   const glowX = useSpring(cursorX, { stiffness: 70,  damping: 22, mass: 1 });
   const glowY = useSpring(cursorY, { stiffness: 70,  damping: 22, mass: 1 });
 
